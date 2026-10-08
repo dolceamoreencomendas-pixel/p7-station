@@ -1,5 +1,5 @@
 // P7 Station - tela de carregamento (baseada na SplashLayer do Pegasus Frontend, GPLv3)
-import QtQuick 2.0
+import QtQuick 2.15
 
 
 Rectangle {
