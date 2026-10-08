@@ -29,7 +29,7 @@ win32|defined(pclinux,var): include(gog/gog.pri)
 win32|macx|defined(pclinux,var)|defined(armlinux,var): include(es2/es2.pri)
 win32: include(launchbox/launchbox.pri)
 win32: include(playnite/playnite.pri)
-android: include(android_apps/android.pri)
+# P7 Station: provedor de apps Android desligado (deixava a abertura 5 s mais lenta)
 defined(pclinux,var): include(lutris/lutris.pri)
 # All platforms
 include(logiqx/logiqx.pri)

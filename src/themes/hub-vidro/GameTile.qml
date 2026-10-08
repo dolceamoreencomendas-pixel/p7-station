@@ -110,6 +110,40 @@ Item {
         border.color: tile.selected ? "#8cffffff" : "#18ffffff"
     }
 
+    // Coração dos favoritos, num selo de vidro no canto
+    Rectangle {
+        visible: tile.entry !== null && tile.entry.fav === true
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: tile.width * 0.06
+        width: Math.round(tile.width * 0.2)
+        height: width
+        radius: width / 2
+        color: "#99000000"
+        border.width: 1
+        border.color: "#40ffffff"
+        Canvas {
+            id: heart
+            anchors.centerIn: parent
+            width: Math.round(parent.width * 0.56)
+            height: width
+            onWidthChanged: requestPaint()
+            onPaint: {
+                var c = getContext("2d"), w = width, h = height;
+                c.reset();
+                c.fillStyle = "#ff5c8a";
+                c.beginPath();
+                c.moveTo(w * 0.5, h * 0.92);
+                c.bezierCurveTo(w * 0.05, h * 0.62, -w * 0.02, h * 0.18, w * 0.27, h * 0.1);
+                c.bezierCurveTo(w * 0.40, h * 0.06, w * 0.48, h * 0.16, w * 0.5, h * 0.26);
+                c.bezierCurveTo(w * 0.52, h * 0.16, w * 0.60, h * 0.06, w * 0.73, h * 0.1);
+                c.bezierCurveTo(w * 1.02, h * 0.18, w * 0.95, h * 0.62, w * 0.5, h * 0.92);
+                c.closePath();
+                c.fill();
+            }
+        }
+    }
+
     MouseArea {
         anchors.fill: parent
         onClicked: tile.tapped()

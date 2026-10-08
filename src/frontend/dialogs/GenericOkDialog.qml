@@ -70,7 +70,7 @@ FocusScope {
             id: titleBar
             width: parent.width
             height: root.titleTextSize * 2.25
-            color: "#333"
+            color: "#1d1846"
 
             Text {
                 id: titleText
@@ -95,7 +95,7 @@ FocusScope {
         Rectangle {
             width: parent.width
             height: messageText.height + 3 * root.textSize
-            color: "#555"
+            color: "#120f2e"
 
             Text {
                 id: messageText
@@ -119,7 +119,7 @@ FocusScope {
             id: closeButton
             width: parent.width
             height: root.textSize * 2.25
-            color: (focus || closeMouseArea.containsMouse) ? "#4ae" : "#666"
+            color: (focus || closeMouseArea.containsMouse) ? "#7c5cff" : "#2a2560"
 
             focus: true
 
@@ -133,7 +133,7 @@ FocusScope {
             Text {
                 anchors.centerIn: parent
 
-                text: qsTr("Ok") + api.tr
+                text: "OK, entendi"
                 color: "#eee"
                 font {
                     pixelSize: root.textSize

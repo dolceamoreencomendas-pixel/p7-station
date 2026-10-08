@@ -1081,9 +1081,9 @@ FocusScope {
 
             Column {
                 id: infoCol
-                anchors.left: parent.left
-                anchors.bottom: details.compact && root.tab === 2 ? undefined : parent.bottom
-                anchors.top: root.tab === 2 ? parent.top : undefined
+                // posição explícita por aba (âncoras trocadas em tempo real deixavam o layout preso)
+                x: 0
+                y: root.tab === 2 ? 0 : details.height - height
                 width: root.tab === 2 ? parent.width : (root.tab === 0 ? 680 : parent.width - statsPanel.width - 48)
                 spacing: 12
 
@@ -1160,10 +1160,8 @@ FocusScope {
                 backdrop: glassSource
                 stageItem: stage
                 id: statsPanel
-                anchors.right: parent.right
-                anchors.bottom: root.tab === 2 ? undefined : parent.bottom
-                anchors.top: root.tab === 2 ? infoCol.bottom : undefined
-                anchors.topMargin: 28
+                x: details.width - width
+                y: root.tab === 2 ? infoCol.height + 28 : details.height - height
                 width: root.tab === 2 ? parent.width : 420
                 height: 96
                 visible: root.current !== null

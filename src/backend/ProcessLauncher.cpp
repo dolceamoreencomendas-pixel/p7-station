@@ -112,19 +112,16 @@ QString processerror_to_string(QProcess::ProcessError error)
 QString pretty_android_exception(const QString& error)
 {
     if (error.startsWith(QLatin1String("android.content.ActivityNotFoundException"))) {
-        return LOGMSG(
-            "The Android activity you are trying to launch does not exist. "
-            "Here is the full error message: %1"
-        );
+        return QStringLiteral(
+            "O emulador deste console não está instalado neste tablet. "
+            "Instale o emulador e tente de novo.\n\n(detalhe técnico: %1)");
     }
     if (error.startsWith(QLatin1String("java.lang.SecurityException:"))) {
-        return LOGMSG(
-            "The Android system refused to run the launch command. "
-            "This usually happens when you try to use native paths on Android 10 or later. "
-            "Here is the full error message: %1"
-        );
+        return QStringLiteral(
+            "O Android não deixou abrir o emulador. Abra o emulador uma vez sozinho, "
+            "aceite as permissões e tente de novo.\n\n(detalhe técnico: %1)");
     }
-    return LOGMSG("Failed to run the launch command: %1");
+    return QStringLiteral("Não foi possível abrir o jogo.\n\n(detalhe técnico: %1)");
 }
 #endif // Q_OS_ANDROID
 } // namespace

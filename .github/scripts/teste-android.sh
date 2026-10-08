@@ -47,6 +47,9 @@ key KEYCODE_DPAD_RIGHT
 shot 04-inicio-terceiro-jogo 4
 key KEYCODE_F
 shot 05-favoritou 2
+key KEYCODE_DPAD_LEFT
+shot 05b-favorito-coracao 2
+key KEYCODE_DPAD_RIGHT
 key KEYCODE_E
 shot 06-biblioteca 4
 key KEYCODE_I
@@ -57,6 +60,10 @@ key KEYCODE_DPAD_RIGHT
 shot 08-filtro-console 3
 key KEYCODE_E
 shot 09-trofeus 4
+key KEYCODE_Q
+shot 09b-volta-biblioteca 3
+key KEYCODE_Q
+shot 09c-volta-inicio 3
 key KEYCODE_ESCAPE
 key KEYCODE_DPAD_UP
 key KEYCODE_ENTER

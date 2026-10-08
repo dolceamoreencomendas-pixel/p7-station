@@ -204,7 +204,7 @@ Window {
         }
         function onEventLaunchError(msg) {
             genericMessage.setSource("dialogs/GenericOkDialog.qml",
-                { "title": qsTr("Error"), "message": msg });
+                { "title": "Ops! Não deu para abrir", "message": msg });
             genericMessage.focus = true;
         }
     }
