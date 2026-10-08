@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import QtGraphicalEffects 1.12
+import QtMultimedia 5.8
 import "logic.js" as L
 import "config.js" as Cfg
 
@@ -41,6 +42,23 @@ FocusScope {
         return trophyList.length ? trophyList[L.clampIndex(trophyIndex, trophyList.length)].entry : null;
     }
 
+    // --------------------------------------------------------------- sons
+    // Sons próprios do P7 Station (sintetizados, sem amostras de terceiros).
+    property bool quiet: true           // sem som durante o carregamento e as atualizações
+    SoundEffect { id: sMove;    source: "sounds/move.wav";    volume: 0.55 }
+    SoundEffect { id: sTab;     source: "sounds/tab.wav";     volume: 0.6 }
+    SoundEffect { id: sConfirm; source: "sounds/confirm.wav"; volume: 0.6 }
+    SoundEffect { id: sBack;    source: "sounds/back.wav";    volume: 0.6 }
+    SoundEffect { id: sLaunch;  source: "sounds/launch.wav";  volume: 0.7 }
+    function sfx(s) { if (!quiet) s.play(); }
+    onHomeIndexChanged: sfx(sMove)
+    onLibIndexChanged: sfx(sMove)
+    onTrophyIndexChanged: sfx(sMove)
+    onFilterIndexChanged: sfx(sMove)
+    onLibOnFiltersChanged: sfx(sMove)
+    onAccountOpenChanged: sfx(accountOpen ? sConfirm : sBack)
+    Timer { id: unquiet; interval: 700; onTriggered: root.quiet = false }
+
     // ------------------------------------------------------------- escala
     // Desenhado em 1440 de largura; a altura acompanha a proporção da tela (Pad 7 = 3:2).
     readonly property real ui: width / 1440
@@ -81,6 +99,8 @@ FocusScope {
     }
 
     function refresh() {
+        var wasQuiet = quiet;
+        quiet = true;
         var keepHome = recents.length ? recents[L.clampIndex(homeIndex, recents.length)].key : api.memory.get("homeKey");
         var keepLib = libraryList.length ? libraryList[L.clampIndex(libIndex, libraryList.length)].key : api.memory.get("libKey");
 
@@ -105,6 +125,7 @@ FocusScope {
         libIndex = li >= 0 ? li : 0;
 
         rebuildTrophies();
+        quiet = wasQuiet;
     }
 
     function setFilter(i) {
@@ -195,11 +216,14 @@ FocusScope {
             api.memory.set("libKey", current.key);
             api.memory.set("filterIndex", filterIndex);
         }
+        sLaunch.play();
         current.game.launch();
     }
 
     function switchTab(t) {
-        tab = (t + 3) % 3;
+        var next = (t + 3) % 3;
+        if (next !== tab) sfx(next === 0 && t !== 3 ? sBack : sTab);
+        tab = next;
         libOnFilters = false;
     }
 
@@ -208,6 +232,7 @@ FocusScope {
         if (api.memory.has("filterIndex")) filterIndex = api.memory.get("filterIndex");
         refresh();
         loadAchievements();
+        unquiet.start();
     }
 
     // Ao voltar de um jogo, atualiza recentes e tempo jogado; troféus a cada volta também.

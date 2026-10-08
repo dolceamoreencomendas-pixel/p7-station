@@ -7,6 +7,11 @@
         <file>hub-vidro/Showcase.qml</file>
         <file>hub-vidro/logic.js</file>
         <file>hub-vidro/config.js</file>
+        <file>hub-vidro/sounds/move.wav</file>
+        <file>hub-vidro/sounds/tab.wav</file>
+        <file>hub-vidro/sounds/confirm.wav</file>
+        <file>hub-vidro/sounds/back.wav</file>
+        <file>hub-vidro/sounds/launch.wav</file>
         <file>pegasus-theme-grid/theme.cfg</file>
         <file>pegasus-theme-grid/theme.qml</file>
         <file>pegasus-theme-grid/layer_filter/CheckBox.qml</file>
