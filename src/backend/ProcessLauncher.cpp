@@ -112,9 +112,21 @@ QString processerror_to_string(QProcess::ProcessError error)
 QString pretty_android_exception(const QString& error)
 {
     if (error.startsWith(QLatin1String("android.content.ActivityNotFoundException"))) {
+        const struct { const char* pkg; const char* name; } known[] = {
+            {"com.retroarch", "RetroArch (versão AArch64 do site)"},
+            {"info.cemu", "Cemu"},
+            {"aethersx2", "NetherSX2"},
+            {"eden_emulator", "Eden"},
+        };
+        for (const auto& k : known) {
+            if (error.contains(QLatin1String(k.pkg))) {
+                return QStringLiteral("Para jogar este jogo, instale o %1 neste tablet e tente de novo.")
+                    .arg(QString::fromUtf8(k.name));
+            }
+        }
         return QStringLiteral(
             "O emulador deste console não está instalado neste tablet. "
-            "Instale o emulador e tente de novo.\n\n(detalhe técnico: %1)");
+            "Instale o emulador e tente de novo.");
     }
     if (error.startsWith(QLatin1String("java.lang.SecurityException:"))) {
         return QStringLiteral(
@@ -249,7 +261,10 @@ void ProcessLauncher::runProcess(const QString& command, const QStringList& args
         Log::info(LOGMSG("Activity finished"));
     }
     else {
-        const QString message = pretty_android_exception(result).arg(result);
+        QString message = pretty_android_exception(result);
+        if (message.contains(QLatin1String("%1")))
+            message = message.arg(result);
+        Log::warning(result);
         emit processLaunchError(message);
         Log::warning(message);
         afterRun();

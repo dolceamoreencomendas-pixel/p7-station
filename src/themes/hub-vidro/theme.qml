@@ -480,7 +480,7 @@ FocusScope {
 
             LiquidPill {
                 x: tabRow.x + (target ? target.x : 0)
-                target: tabRepeater.count > root.tab ? tabRepeater.itemAt(root.tab) : null
+                target: tabRepeater.added >= 0 && tabRepeater.count > root.tab ? tabRepeater.itemAt(root.tab) : null
             }
 
             Row {
@@ -490,6 +490,8 @@ FocusScope {
 
                 Repeater {
                     id: tabRepeater
+                    property int added: 0   // força a bolha a achar o item quando ele acaba de ser criado
+                    onItemAdded: added++
                     model: root.tabNames
                     delegate: Item {
                         width: tabLabel.implicitWidth + 40
@@ -732,7 +734,7 @@ FocusScope {
                 LiquidPill {
                     x: filterRow.x + (target ? target.x : 0)
                     light: true
-                    target: filterRepeater.count > root.filterIndex ? filterRepeater.itemAt(root.filterIndex) : null
+                    target: filterRepeater.added >= 0 && filterRepeater.count > root.filterIndex ? filterRepeater.itemAt(root.filterIndex) : null
                 }
 
                 Row {
@@ -742,6 +744,8 @@ FocusScope {
 
                     Repeater {
                         id: filterRepeater
+                        property int added: 0   // força a bolha a achar o item quando ele acaba de ser criado
+                        onItemAdded: added++
                         model: root.filters
                         delegate: Item {
                             readonly property bool active: index === root.filterIndex
@@ -790,7 +794,7 @@ FocusScope {
 
                 LiquidPill {
                     x: sortRow.x + (target ? target.x : 0)
-                    target: sortRepeater.count > root.sortMode ? sortRepeater.itemAt(root.sortMode) : null
+                    target: sortRepeater.added >= 0 && sortRepeater.count > root.sortMode ? sortRepeater.itemAt(root.sortMode) : null
                 }
                 Row {
                     id: sortRow
@@ -798,6 +802,8 @@ FocusScope {
                     spacing: 2
                     Repeater {
                         id: sortRepeater
+                        property int added: 0   // força a bolha a achar o item quando ele acaba de ser criado
+                        onItemAdded: added++
                         model: L.SORTS
                         delegate: Item {
                             width: sortLabel.implicitWidth + 30
