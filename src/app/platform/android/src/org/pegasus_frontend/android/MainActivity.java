@@ -198,6 +198,13 @@ public class MainActivity extends org.qtproject.qt5.android.bindings.QtActivity 
     }
 
 
+    // P7 Station: só consulta, sem abrir a tela de configurações de novo
+    public static boolean hasAllStorageAccess() {
+        if (Build.VERSION.SDK_INT < 30)
+            return true;
+        return Environment.isExternalStorageManager();
+    }
+
     public static boolean getAllStorageAccess() {
         if (Build.VERSION.SDK_INT < 30)
             return true;

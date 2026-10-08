@@ -30,6 +30,9 @@
 
 #ifdef Q_OS_ANDROID
 #include "backend/platform/AndroidHelpers.h"
+#include <QEventLoop>
+#include <QTimer>
+#include <QtAndroidExtras/QAndroidJniObject>
 #endif
 
 
@@ -86,6 +89,21 @@ int main(int argc, char *argv[])
 bool request_runtime_permissions()
 {
 #ifdef Q_OS_ANDROID
+    if (android::has_external_storage_access())
+        return true;
+
+    // P7 Station: o Android abriu a tela "Acesso a todos os arquivos". Antes o app encerrava aqui
+    // e ficava uma tela branca ao voltar; agora ele espera a permissão e segue normalmente.
+    QEventLoop wait_loop;
+    QTimer poll;
+    QObject::connect(&poll, &QTimer::timeout, [&wait_loop](){
+        const bool granted = QAndroidJniObject::callStaticMethod<jboolean>(
+            "org/pegasus_frontend/android/MainActivity", "hasAllStorageAccess");
+        if (granted)
+            wait_loop.quit();
+    });
+    poll.start(600);
+    wait_loop.exec();
     return android::has_external_storage_access();
 #endif
 
