@@ -19,6 +19,12 @@ adb shell wm size > "$OUT/tela.txt"
 
 adb install -r -g apk/*.apk || { echo "FALHOU A INSTALACAO" > "$OUT/erro.txt"; exit 0; }
 
+# 0) ícone do app na gaveta de apps
+adb shell input keyevent KEYCODE_HOME; sleep 2
+adb shell input swipe 1280 1600 1280 400 300
+shot 00-icone-na-gaveta 4
+adb shell input keyevent KEYCODE_HOME
+
 # 1) primeira abertura SEM a permissão: deve abrir a tela do Android pedindo acesso a arquivos
 start_app
 shot 01-pede-permissao 6
