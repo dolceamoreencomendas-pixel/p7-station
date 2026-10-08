@@ -1,0 +1,75 @@
+name: P7 Station - teste no Android virtual
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  TOOLS_URL: https://github.com/mmatyas/pegasus-frontend/releases/download/alpha1
+  QT_TARGET: android
+  QT_VERSION: qt51510
+  QT_VERSION_PRETTY: "5.15.10"
+
+jobs:
+  teste:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {submodules: 'recursive', fetch-depth: 0, fetch-tags: true}
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r21e
+
+      - name: Instalar Qt para Android
+        run: |
+          .circleci/prepare.sh
+          curl -L ${TOOLS_URL}/openssl-111t_android.tar.xz | tar xJf - -C /opt/
+
+      # Versão x86_64 só para o Android virtual (o tablet usa a arm64 do outro workflow)
+      - name: Compilar para o Android virtual
+        env:
+          BUILDOPTS: ANDROID_ABIS=x86_64 FORCE_QT_PNG=1
+          ANDROID_NDK: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_LATEST_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          .circleci/build.sh
+          /opt/${QT_VERSION}_${QT_TARGET}/bin/androiddeployqt \
+            --input src/app/android-pegasus-fe-deployment-settings.json \
+            --output ${PWD}/installdir --android-platform android-30 --gradle
+          mkdir -p apk
+          cp installdir/build/outputs/apk/debug/installdir-debug.apk apk/p7station-teste-x86_64.apk
+
+      - name: Ligar aceleração do emulador
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Rodar no Android virtual e tirar prints
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_c
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash .github/scripts/teste-android.sh
+
+      - name: Publicar prints
+        if: always()
+        run: |
+          cd resultado && zip -q ../prints.zip * && cd ..
+          gh release create "teste-${{ github.run_number }}" --prerelease \
+            --title "Teste ${{ github.run_number }} (Android virtual)" \
+            --notes "Prints e registros do teste automático. Não é para instalar." \
+            prints.zip resultado/*.png resultado/*.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
