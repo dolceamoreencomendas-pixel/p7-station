@@ -33,7 +33,7 @@ jobs:
       # Versão x86_64 só para o Android virtual (o tablet usa a arm64 do outro workflow)
       - name: Compilar para o Android virtual
         env:
-          BUILDOPTS: ANDROID_ABIS=x86_64 FORCE_QT_PNG=1
+          BUILDOPTS: ANDROID_ABIS=x86_64 FORCE_QT_PNG=1 ENABLE_APNG=
           ANDROID_NDK: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
