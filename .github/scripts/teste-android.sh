@@ -10,7 +10,7 @@ ACT=org.pegasus_frontend.android.MainActivity
 
 shot() { sleep "${2:-3}"; adb exec-out screencap -p > "$OUT/$1.png"; }
 key()  { adb shell input keyevent "$@"; sleep 1.2; }
-start_app() { adb shell am start -W -n "$PKG/$ACT"; }
+start_app() { adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1; }
 stop_app()  { adb shell am force-stop "$PKG"; sleep 2; }
 
 adb wait-for-device
@@ -23,9 +23,10 @@ adb install -r -g apk/*.apk || { echo "FALHOU A INSTALACAO" > "$OUT/erro.txt"; e
 start_app
 shot 01-pede-permissao 6
 adb shell appops set --uid "$PKG" MANAGE_EXTERNAL_STORAGE allow
-# volta para o app: ele deve seguir sozinho (sem tela branca)
-start_app
-shot 02-depois-da-permissao 12
+# volta para o app como uma pessoa faria (botão voltar): ele deve seguir sozinho
+key KEYCODE_BACK
+shot 02-depois-da-permissao 15
+adb logcat -d -s P7 pegasus-fe Qt qml default libpegasus-fe_x86_64.so > "$OUT/log-primeira-abertura.txt"
 adb shell ls -la /sdcard/Jogos /sdcard/P7Station > "$OUT/pastas-criadas.txt" 2>&1
 adb shell cat /sdcard/Jogos/metadata.pegasus.txt > "$OUT/metadata-criado.txt" 2>&1
 
@@ -66,6 +67,8 @@ shot 11-jogar-sem-emulador 5
 
 # registros para achar erros
 adb logcat -d > "$OUT/logcat-completo.txt"
+grep -E "P7:|pegasus-fe|qml|QML|libpegasus" "$OUT/logcat-completo.txt" > "$OUT/log-app.txt"
+adb shell ls -la /sdcard/ /sdcard/Jogos /sdcard/P7Station > "$OUT/pastas-final.txt" 2>&1
 grep -i -E "qml|pegasus|p7station|shader|error|fatal" "$OUT/logcat-completo.txt" | tail -400 > "$OUT/logcat-resumo.txt"
 adb pull /sdcard/P7Station/lastrun.log "$OUT/lastrun.log" 2>/dev/null
 adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity" > "$OUT/tela-ativa.txt"

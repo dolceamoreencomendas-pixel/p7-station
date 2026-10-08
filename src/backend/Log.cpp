@@ -25,9 +25,9 @@
 #include <QFile>
 #include <QTextStream>
 
-#if defined(Q_OS_ANDROID) && defined(QT_DEBUG)
+#if defined(Q_OS_ANDROID)
 #include <android/log.h>
-#endif // defined(Q_OS_ANDROID) && defined(QT_DEBUG)
+#endif // defined(Q_OS_ANDROID)
 
 
 LogSink::LogSink() = default;
@@ -144,7 +144,7 @@ private:
     }
 };
 
-#if defined(Q_OS_ANDROID) && defined(QT_DEBUG)
+#if defined(Q_OS_ANDROID)
 class AndroidLogcat : public LogSink {
 public:
     AndroidLogcat() {}
@@ -170,7 +170,7 @@ private:
         __android_log_write(prio, m_appname, out.toLocal8Bit().constData());
     }
 };
-#endif // defined(Q_OS_ANDROID) && defined(QT_DEBUG)
+#endif // defined(Q_OS_ANDROID)
 } // namespace logsinks
 
 
@@ -206,9 +206,9 @@ void Log::init(bool silent)
 {
     if (!silent) {
         m_sinks.emplace_back(new logsinks::Terminal());
-        #if defined(Q_OS_ANDROID) && defined(QT_DEBUG)
+        #if defined(Q_OS_ANDROID)
         m_sinks.emplace_back(new logsinks::AndroidLogcat);
-        #endif // defined(Q_OS_ANDROID) && defined(QT_DEBUG)
+        #endif // defined(Q_OS_ANDROID)
     }
 
     m_sinks.emplace_back(new logsinks::LogFile());

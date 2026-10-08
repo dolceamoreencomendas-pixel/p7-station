@@ -72,10 +72,15 @@ int main(int argc, char *argv[])
     app.setOrganizationDomain(QStringLiteral("pegasus-frontend.org"));
     app.setWindowIcon(QIcon(QStringLiteral(":/icon.png")));
 
-    if (!request_runtime_permissions())
+    qWarning("P7: app iniciado, verificando permissao de arquivos");
+    if (!request_runtime_permissions()) {
+        qWarning("P7: sem permissao de arquivos, encerrando");
         return 1;
+    }
+    qWarning("P7: permissao ok");
 
     p7_first_run_setup();
+    qWarning("P7: pastas prontas, iniciando o hub");
 
     backend::CliArgs cli_args = handle_cli_args(app);
     cli_args.portable |= portable_txt_present();
@@ -91,6 +96,7 @@ bool request_runtime_permissions()
 #ifdef Q_OS_ANDROID
     if (android::has_external_storage_access())
         return true;
+    qWarning("P7: aguardando a permissao de arquivos");
 
     // P7 Station: o Android abriu a tela "Acesso a todos os arquivos". Antes o app encerrava aqui
     // e ficava uma tela branca ao voltar; agora ele espera a permissão e segue normalmente.
@@ -104,7 +110,10 @@ bool request_runtime_permissions()
     });
     poll.start(600);
     wait_loop.exec();
-    return android::has_external_storage_access();
+    qWarning("P7: permissao de arquivos concedida");
+    const bool ok = android::has_external_storage_access();
+    qWarning("P7: verificacao final da permissao: %d", ok ? 1 : 0);
+    return ok;
 #endif
 
     return true;
