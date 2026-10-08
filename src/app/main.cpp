@@ -20,6 +20,8 @@
 #include "backend/platform/TerminalKbd.h"
 
 #include <QCommandLineParser>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QIcon>
@@ -39,6 +41,7 @@ Q_IMPORT_PLUGIN(ApngImagePlugin)
 backend::CliArgs handle_cli_args(QGuiApplication&);
 bool request_runtime_permissions();
 bool portable_txt_present();
+void p7_first_run_setup();
 
 int main(int argc, char *argv[])
 {
@@ -68,6 +71,8 @@ int main(int argc, char *argv[])
 
     if (!request_runtime_permissions())
         return 1;
+
+    p7_first_run_setup();
 
     backend::CliArgs cli_args = handle_cli_args(app);
     cli_args.portable |= portable_txt_present();
@@ -186,4 +191,149 @@ backend::CliArgs handle_cli_args(QGuiApplication& app)
     return args;
 
 #undef CMDMSG
+}
+
+
+// ---------------------------------------------------------------- P7 Station
+// Cria a pasta de jogos com uma subpasta por console, o arquivo que diz qual emulador
+// abre cada console e registra a pasta como pasta de jogos. Roda a cada abertura e só
+// mexe no que falta (ou no arquivo de emuladores, enquanto ele tiver a marca automática).
+void p7_first_run_setup()
+{
+#ifdef Q_OS_ANDROID
+    static const char METADATA[] = R"P7(# P7STATION-AUTO v1
+# Arquivo criado pelo P7 Station. Ele é atualizado sozinho a cada versão do app.
+# Se quiser editar (por exemplo, usar a linha alternativa de um emulador),
+# APAGUE a primeira linha deste arquivo: assim o app não substitui suas mudanças.
+# ==================================================================
+#  Hub de Jogos - consoles e emuladores
+#  Este arquivo fica dentro da pasta "Jogos", junto das pastas
+#  snes, psx, ps2, wiiu e switch.
+#
+#  Cada bloco diz ao Pegasus:
+#    - quais arquivos são jogos (extensions)
+#    - em que pasta eles estão (directories)
+#    - como abrir o emulador direto no jogo (launch)
+#
+#  Linhas que começam com # são comentários e não fazem nada.
+# ==================================================================
+
+
+# ------------------------------------------------------------------
+#  SUPER NINTENDO  ->  RetroArch (núcleo Snes9x)
+# ------------------------------------------------------------------
+collection: Super Nintendo
+shortname: snes
+directories: snes
+extensions: sfc, smc, fig, swc, zip, 7z
+launch: am start --user 0
+  -n com.retroarch.aarch64/com.retroarch.browser.retroactivity.RetroActivityFuture
+  -e ROM {file.path}
+  -e LIBRETRO /data/data/com.retroarch.aarch64/cores/snes9x_libretro_android.so
+  -e CONFIGFILE /storage/emulated/0/Android/data/com.retroarch.aarch64/files/retroarch.cfg
+  -e QUITFOCUS 1
+  --activity-clear-task --activity-clear-top --activity-no-history
+
+
+# ------------------------------------------------------------------
+#  PLAYSTATION 1  ->  RetroArch (núcleo PCSX ReARMed)
+#  Prefira jogos em .chd (1 arquivo por jogo). Se usar .cue + .bin,
+#  só o .cue aparece na lista - é assim mesmo.
+# ------------------------------------------------------------------
+collection: PlayStation
+shortname: psx
+directories: psx
+extensions: chd, pbp, cue, m3u
+launch: am start --user 0
+  -n com.retroarch.aarch64/com.retroarch.browser.retroactivity.RetroActivityFuture
+  -e ROM {file.path}
+  -e LIBRETRO /data/data/com.retroarch.aarch64/cores/pcsx_rearmed_libretro_android.so
+  -e CONFIGFILE /storage/emulated/0/Android/data/com.retroarch.aarch64/files/retroarch.cfg
+  -e QUITFOCUS 1
+  --activity-clear-task --activity-clear-top --activity-no-history
+
+
+# ------------------------------------------------------------------
+#  PLAYSTATION 2  ->  NetherSX2
+#  O NetherSX2 precisa ter acesso à pasta Jogos/ps2 (ele pede na
+#  primeira vez que você escolhe a pasta de jogos dentro dele).
+# ------------------------------------------------------------------
+collection: PlayStation 2
+shortname: ps2
+directories: ps2
+extensions: chd, iso, cso, zso
+launch: am start --user 0
+  -n xyz.aethersx2.android/.EmulationActivity
+  -a android.intent.action.MAIN
+  --es bootPath {file.documenturi}
+  --activity-clear-task --activity-clear-top
+# Se o seu NetherSX2 for a versão "Turnip", troque a linha do -n acima por:
+#   -n xyz.aethersx2.tturnip/xyz.aethersx2.android.EmulationActivity
+
+
+# ------------------------------------------------------------------
+#  WII U  ->  Cemu
+#  Use jogos em .wua (1 arquivo por jogo).
+#  O Cemu precisa ter acesso à pasta Jogos/wiiu (adicione dentro do
+#  Cemu em "Game paths").
+# ------------------------------------------------------------------
+collection: Wii U
+shortname: wiiu
+directories: wiiu
+extensions: wua, wud, wux, rpx
+launch: am start --user 0
+  -n info.cemu.cemu/info.cemu.cemu.emulation.EmulationActivity
+  -d {file.documenturi}
+# Se o Cemu não abrir, troque a linha do -n acima por:
+#   -n info.cemu.Cemu/info.cemu.Cemu.emulation.EmulationActivity
+
+
+# ------------------------------------------------------------------
+#  NINTENDO SWITCH  ->  Eden
+#  Precisa das chaves (prod.keys) e do firmware instalados no Eden.
+# ------------------------------------------------------------------
+collection: Nintendo Switch
+shortname: switch
+directories: switch
+extensions: nsp, xci
+launch: am start --user 0
+  -n dev.eden.eden_emulator/org.yuzu.yuzu_emu.activities.EmulationActivity
+  -a android.nfc.action.TECH_DISCOVERED
+  -d {file.uri}
+# Se você instalou a versão "legacy" do Eden, troque a linha do -n por:
+#   -n dev.legacy.eden_emulator/org.yuzu.yuzu_emu.activities.EmulationActivity
+)P7";
+
+    const QString games_root = QStringLiteral("/storage/emulated/0/Jogos");
+    QDir dir;
+    for (const char* sub : {"snes", "psx", "ps2", "wiiu", "switch", "_bios"})
+        dir.mkpath(games_root + QChar('/') + QLatin1String(sub));
+
+    const QByteArray wanted(METADATA);
+    QFile meta(games_root + QStringLiteral("/metadata.pegasus.txt"));
+    bool write_meta = true;
+    if (meta.exists() && meta.open(QIODevice::ReadOnly)) {
+        const QByteArray current = meta.readAll();
+        meta.close();
+        write_meta = current != wanted && current.startsWith("# P7STATION-AUTO");
+    }
+    if (write_meta && meta.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        meta.write(wanted);
+        meta.close();
+    }
+
+    QFile gamedirs(paths::writableConfigDir() + QStringLiteral("/game_dirs.txt"));
+    QByteArray listed;
+    if (gamedirs.open(QIODevice::ReadOnly)) {
+        listed = gamedirs.readAll();
+        gamedirs.close();
+    }
+    if (!listed.split('\n').contains(games_root.toUtf8())
+        && gamedirs.open(QIODevice::Append | QIODevice::Text)) {
+        if (!listed.isEmpty() && !listed.endsWith('\n'))
+            gamedirs.write("\n");
+        gamedirs.write(games_root.toUtf8() + "\n");
+        gamedirs.close();
+    }
+#endif
 }

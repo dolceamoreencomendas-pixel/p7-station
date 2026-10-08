@@ -1,5 +1,12 @@
 <RCC>
     <qresource prefix="/themes">
+        <file>hub-vidro/theme.cfg</file>
+        <file>hub-vidro/theme.qml</file>
+        <file>hub-vidro/GameTile.qml</file>
+        <file>hub-vidro/Glass.qml</file>
+        <file>hub-vidro/Showcase.qml</file>
+        <file>hub-vidro/logic.js</file>
+        <file>hub-vidro/config.js</file>
         <file>pegasus-theme-grid/theme.cfg</file>
         <file>pegasus-theme-grid/theme.qml</file>
         <file>pegasus-theme-grid/layer_filter/CheckBox.qml</file>

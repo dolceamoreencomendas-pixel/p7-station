@@ -74,6 +74,7 @@ android {
     }
 
     defaultConfig {
+        applicationId "com.p7station.app"
         resConfig "en"
         minSdkVersion = qtMinSdkVersion
         targetSdkVersion = qtTargetSdkVersion

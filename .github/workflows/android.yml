@@ -1,5 +1,11 @@
-name: Build - Android
-on: [push, pull_request, workflow_dispatch]
+name: P7 Station - APK Android
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 env:
   TOOLS_URL: https://github.com/mmatyas/pegasus-frontend/releases/download/alpha1
@@ -7,17 +13,9 @@ env:
   QT_VERSION: qt51510
   QT_VERSION_PRETTY: "5.15.10"
 
-
 jobs:
-  android:
+  android64:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: android
-            abi: armeabi-v7a
-          - name: android64
-            abi: arm64-v8a
     steps:
       - uses: actions/checkout@v4
         with: {submodules: 'recursive', fetch-depth: 0, fetch-tags: true}
@@ -27,70 +25,56 @@ jobs:
         with:
           ndk-version: r21e
 
-      - name: Install Qt
+      - name: Instalar Qt para Android
         run: |
           .circleci/prepare.sh
           curl -L ${TOOLS_URL}/openssl-111t_android.tar.xz | tar xJf - -C /opt/
-      - name: Build
+
+      - name: Compilar
         env:
-          BUILDOPTS: ANDROID_ABIS=${{ matrix.abi }} FORCE_QT_PNG=1
+          BUILDOPTS: ANDROID_ABIS=arm64-v8a FORCE_QT_PNG=1
           ANDROID_NDK: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_LATEST_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: .circleci/build.sh
 
-      - name: Package (debug)
-        if: (github.event_name != 'push' && github.event_name != 'workflow_dispatch') || github.ref != 'refs/heads/master'
+      # Assina com a chave do P7 Station (segredos P7_KEYSTORE_B64 e P7_KEYSTORE_PASS).
+      # Sem os segredos, gera uma versão de teste (debug), que instala mas não atualiza por cima.
+      - name: Empacotar APK
         env:
           ANDROID_NDK: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_LATEST_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: /opt/${QT_VERSION}_${QT_TARGET}/bin/androiddeployqt
-          --input src/app/android-pegasus-fe-deployment-settings.json
-          --output ${PWD}/installdir
-          --android-platform android-30
-          --gradle
-      - name: Package (debug), stage
-        if: (github.event_name != 'push' && github.event_name != 'workflow_dispatch') || github.ref != 'refs/heads/master'
-        run: cp
-          installdir/build/outputs/apk/debug/installdir-debug.apk
-          dist/pegasus-fe_$(git describe --always)_${{ matrix.name }}.apk
-
-      - name: Package (release), prep
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
+          P7_KEYSTORE_B64: ${{ secrets.P7_KEYSTORE_B64 }}
+          P7_KEYSTORE_PASS: ${{ secrets.P7_KEYSTORE_PASS }}
         run: |
-          curl -LO https://github.com/mmatyas/pegasus-frontend/releases/download/alpha1/aks.enc
-          openssl aes-256-cbc -k "${{ secrets.AKS_ENC_KEY }}" -in aks.enc -out aks -d
-      - name: Package (release)
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
-        run: /opt/${QT_VERSION}_${QT_TARGET}/bin/androiddeployqt
-          --input src/app/android-pegasus-fe-deployment-settings.json
-          --output ${PWD}/installdir
-          --android-platform android-30
-          --gradle
-          --sign ./aks "${{ secrets.AKS_ALIAS }}"
-          --storepass "${{ secrets.AKS_STOREPASS }}"
-          --keypass "${{ secrets.AKS_KEYPASS }}"
-      - name: Package (release), stage
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
-        run: cp
-          installdir/build/outputs/apk/release/installdir-release-signed.apk
-          dist/pegasus-fe_$(git describe --always)_${{ matrix.name }}.apk
+          set -e
+          VERSION="1.0.$(git rev-list --count HEAD)"
+          echo "P7_VERSION=$VERSION" >> "$GITHUB_ENV"
+          DEPLOY=/opt/${QT_VERSION}_${QT_TARGET}/bin/androiddeployqt
+          ARGS="--input src/app/android-pegasus-fe-deployment-settings.json --output ${PWD}/installdir --android-platform android-30 --gradle"
+          if [ -n "$P7_KEYSTORE_B64" ]; then
+            echo "$P7_KEYSTORE_B64" | base64 -d > p7station.keystore
+            $DEPLOY $ARGS --sign ./p7station.keystore p7station --storepass "$P7_KEYSTORE_PASS" --keypass "$P7_KEYSTORE_PASS"
+            cp installdir/build/outputs/apk/release/installdir-release-signed.apk "dist/P7-Station-${VERSION}.apk"
+            rm -f p7station.keystore
+          else
+            $DEPLOY $ARGS
+            cp installdir/build/outputs/apk/debug/installdir-debug.apk "dist/P7-Station-${VERSION}-teste.apk"
+          fi
+          ls -la dist
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
-          path: dist
+          name: P7-Station-apk
+          path: dist/*.apk
 
-      - name: Deploy
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/master'
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Publicar versão
+        uses: softprops/action-gh-release@v2
         with:
-          external_repository: mmatyas/pegasus-deploy-staging
-          personal_token: ${{ secrets.PEGASUS_GHACTIONS_TOKEN }}
-          publish_branch: continuous-${{ matrix.name }}
-          publish_dir: ./dist
-          force_orphan: true
+          tag_name: v${{ env.P7_VERSION }}
+          name: P7 Station ${{ env.P7_VERSION }}
+          body: Instale o arquivo .apk no tablet (permita instalar apps desta fonte quando o Android pedir).
+          files: dist/*.apk

@@ -53,7 +53,7 @@ QString get_appconfig_dir()
 {
 #ifdef Q_OS_ANDROID
     const QString dir_path = QSP::writableLocation(QSP::GenericDataLocation)
-                           + QStringLiteral("/pegasus-frontend");
+                           + QStringLiteral("/P7Station");
 #else
     QString dir_path = AppSettings::general.portable
         ? paths::app_dir_path() + QStringLiteral("/config")
@@ -133,7 +133,7 @@ const QStringList& configDirs()
 #ifdef Q_OS_ANDROID
         const QStringList all_roots = android::storage_paths();
         for (const QString& storage_root : all_roots) {
-            QString path = storage_root + QStringLiteral("/pegasus-frontend");
+            QString path = storage_root + QStringLiteral("/P7Station");
             if (QFileInfo::exists(path))
                 paths << std::move(path);
         }
