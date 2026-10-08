@@ -5,6 +5,7 @@
         <file>hub-vidro/GameTile.qml</file>
         <file>hub-vidro/Glass.qml</file>
         <file>hub-vidro/Showcase.qml</file>
+        <file>hub-vidro/LiquidPill.qml</file>
         <file>hub-vidro/logic.js</file>
         <file>hub-vidro/config.js</file>
         <file>hub-vidro/sounds/move.wav</file>

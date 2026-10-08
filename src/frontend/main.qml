@@ -25,7 +25,7 @@ Window {
     visible: true
     width: 1280
     height: 720
-    title: "Pegasus"
+    title: "P7 Station"
     color: "#000"
 
     visibility: Internal.settings.fullscreen
@@ -88,8 +88,7 @@ Window {
             function getThemeFile() {
                 if (Internal.scanner.running)
                     return "";
-                if (api.collections.count === 0)
-                    return "messages/NoGamesError.qml";
+                // P7 Station: o tema mostra a própria tela de boas-vindas quando não há jogos
 
                 return apiThemePath;
             }

@@ -94,12 +94,26 @@ function playedTime(entry) {
     return d.getTime();
 }
 
-// Lista de jogos recentes; se ninguém jogou nada ainda, mostra os primeiros da biblioteca.
+// Fileira do Início: primeiro os jogados por último, depois o resto da biblioteca (A–Z).
 function buildRecents(entries, limit) {
     var played = entries.filter(function (e) { return playedTime(e) > 0; });
     played.sort(function (a, b) { return playedTime(b) - playedTime(a); });
-    if (played.length > 0) return { label: "Jogados recentemente", list: played.slice(0, limit) };
-    return { label: "Sua biblioteca", list: sortAZ(entries).slice(0, limit) };
+    var rest = sortAZ(entries.filter(function (e) { return playedTime(e) <= 0; }));
+    return {
+        label: played.length > 0 ? "Jogados recentemente" : "Sua biblioteca",
+        played: played.length,
+        list: played.concat(rest).slice(0, limit)
+    };
+}
+
+var SORTS = ["A–Z", "Recentes", "Mais jogados"];
+
+// mode 0 = A–Z · 1 = jogados por último · 2 = mais tempo jogado
+function sortList(list, mode) {
+    var out = sortAZ(list);
+    if (mode === 1) out.sort(function (a, b) { return playedTime(b) - playedTime(a); });
+    if (mode === 2) out.sort(function (a, b) { return (Number(b.playTime) || 0) - (Number(a.playTime) || 0); });
+    return out;
 }
 
 function sortAZ(entries) {
@@ -111,21 +125,38 @@ function sortAZ(entries) {
     return copy;
 }
 
-function filterBySystem(entries, shortName) {
-    if (!shortName) return sortAZ(entries);
-    return sortAZ(entries.filter(function (e) { return e.sys === shortName; }));
+// key "" = todos · "*fav" = favoritos · senão o console
+function filterList(entries, key, mode) {
+    var list = entries.filter(function (e) {
+        if (!key) return true;
+        if (key === "*fav") return !!e.fav;
+        return e.sys === key;
+    });
+    return sortList(list, mode || 0);
 }
 
-// Abas da Biblioteca: "Todos" + só os consoles que têm jogos, na ordem fixa.
+function filterBySystem(entries, shortName) {
+    return filterList(entries, shortName, 0);
+}
+
+// Abas da Biblioteca: "Todos", "Favoritos" (se houver) e só os consoles que têm jogos, com a contagem.
 function libraryFilters(entries) {
-    var present = {};
-    entries.forEach(function (e) { present[e.sys] = true; });
-    var out = [{ key: "", label: "Todos" }];
-    SYSTEM_ORDER.forEach(function (k) { if (present[k]) out.push({ key: k, label: SYSTEMS[k].short }); });
-    Object.keys(present).forEach(function (k) {
-        if (!SYSTEMS.hasOwnProperty(k)) out.push({ key: k, label: systemInfo(k).short });
+    var count = {}, favs = 0;
+    entries.forEach(function (e) { count[e.sys] = (count[e.sys] || 0) + 1; if (e.fav) favs++; });
+    var out = [{ key: "", label: "Todos", name: "Todos os jogos", count: entries.length }];
+    if (favs > 0) out.push({ key: "*fav", label: "Favoritos", name: "Favoritos", count: favs });
+    SYSTEM_ORDER.forEach(function (k) {
+        if (count[k]) out.push({ key: k, label: SYSTEMS[k].short, name: SYSTEMS[k].name, count: count[k] });
+    });
+    Object.keys(count).forEach(function (k) {
+        if (!SYSTEMS.hasOwnProperty(k)) out.push({ key: k, label: systemInfo(k).short, name: systemInfo(k).name, count: count[k] });
     });
     return out;
+}
+
+function indexOfFilter(filters, key) {
+    for (var i = 0; i < filters.length; i++) if (filters[i].key === key) return i;
+    return 0;
 }
 
 // Resposta do API_GetUserCompletionProgress -> índice por nome normalizado (+ console).

@@ -19,11 +19,15 @@ FocusScope {
     property int tab: 0                       // 0 Início · 1 Biblioteca · 2 Troféus
     readonly property var tabNames: ["Início", "Biblioteca", "Troféus"]
 
-    property var filters: [{ key: "", label: "Todos" }]
+    property var filters: []
     property int filterIndex: 0
     property var libraryList: []
     property int libIndex: 0
     property bool libOnFilters: false
+    property int sortMode: 0                  // 0 A–Z · 1 Recentes · 2 Mais jogados
+    property bool settingsOpen: false
+    property bool gearFocused: false
+    property bool soundOn: true
 
     property var trophyList: []
     property int trophyIndex: 0
@@ -50,13 +54,16 @@ FocusScope {
     SoundEffect { id: sConfirm; source: "sounds/confirm.wav"; volume: 0.6 }
     SoundEffect { id: sBack;    source: "sounds/back.wav";    volume: 0.6 }
     SoundEffect { id: sLaunch;  source: "sounds/launch.wav";  volume: 0.7 }
-    function sfx(s) { if (!quiet) s.play(); }
+    function sfx(s) { if (!quiet && soundOn) s.play(); }
     onHomeIndexChanged: sfx(sMove)
     onLibIndexChanged: sfx(sMove)
     onTrophyIndexChanged: sfx(sMove)
     onFilterIndexChanged: sfx(sMove)
     onLibOnFiltersChanged: sfx(sMove)
     onAccountOpenChanged: sfx(accountOpen ? sConfirm : sBack)
+    onSettingsOpenChanged: sfx(settingsOpen ? sConfirm : sBack)
+    onSortModeChanged: sfx(sTab)
+    onGearFocusedChanged: sfx(sMove)
     Timer { id: unquiet; interval: 700; onTriggered: root.quiet = false }
 
     // ------------------------------------------------------------- escala
@@ -86,6 +93,7 @@ FocusScope {
             bg: bg,
             lastPlayed: g.lastPlayed,
             playTime: g.playTime,
+            fav: g.favorite,
             key: sys + "|" + g.title
         };
     }
@@ -118,9 +126,11 @@ FocusScope {
         homeIndex = hi >= 0 ? hi : 0;
         if (r.label === "Jogados recentemente") homeIndex = 0;   // o último jogado sempre volta para a frente
 
+        var keepFilter = filters.length > filterIndex ? filters[filterIndex].key
+                       : (api.memory.has("filterKey") ? String(api.memory.get("filterKey")) : "");
         filters = L.libraryFilters(out);
-        filterIndex = L.clampIndex(filterIndex, filters.length);
-        libraryList = L.filterBySystem(out, filters[filterIndex].key);
+        filterIndex = L.indexOfFilter(filters, keepFilter);
+        libraryList = L.filterList(out, filters[filterIndex].key, sortMode);
         var li = keepLib ? indexOfKey(libraryList, keepLib) : -1;
         libIndex = li >= 0 ? li : 0;
 
@@ -130,8 +140,31 @@ FocusScope {
 
     function setFilter(i) {
         filterIndex = L.clampIndex(i, filters.length);
-        libraryList = L.filterBySystem(entries, filters[filterIndex].key);
+        libraryList = L.filterList(entries, filters[filterIndex].key, sortMode);
         libIndex = 0;
+        api.memory.set("filterKey", filters[filterIndex].key);
+    }
+
+    function setSort(m) {
+        sortMode = (m + 3) % 3;
+        libraryList = L.filterList(entries, filters[filterIndex].key, sortMode);
+        libIndex = 0;
+        api.memory.set("sortMode", sortMode);
+    }
+
+    // Triângulo: favoritar/desfavoritar o jogo selecionado (o Pegasus guarda os favoritos)
+    function toggleFavorite() {
+        if (!current || tab === 2) return;
+        var g = current.game;
+        g.favorite = !g.favorite;
+        sfx(g.favorite ? sConfirm : sBack);
+        refresh();
+    }
+
+    function setSound(on) {
+        soundOn = on;
+        api.memory.set("soundOn", on);
+        if (on) sConfirm.play();
     }
 
     function rebuildTrophies() {
@@ -214,9 +247,9 @@ FocusScope {
         api.memory.set("homeKey", current.key);
         if (tab === 1) {
             api.memory.set("libKey", current.key);
-            api.memory.set("filterIndex", filterIndex);
+            api.memory.set("filterKey", filters[filterIndex].key);
         }
-        sLaunch.play();
+        if (soundOn) sLaunch.play();
         current.game.launch();
     }
 
@@ -229,7 +262,8 @@ FocusScope {
 
     Component.onCompleted: {
         if (api.memory.has("tab")) tab = api.memory.get("tab");
-        if (api.memory.has("filterIndex")) filterIndex = api.memory.get("filterIndex");
+        if (api.memory.has("sortMode")) sortMode = api.memory.get("sortMode");
+        if (api.memory.has("soundOn")) soundOn = api.memory.get("soundOn");
         refresh();
         loadAchievements();
         unquiet.start();
@@ -248,21 +282,37 @@ FocusScope {
 
     // ------------------------------------------------------------ controle
     Keys.onPressed: {
+        if (settingsOpen) { handleSettingsKey(event); return; }
+        if (accountOpen) {
+            if (api.keys.isCancel(event)) { event.accepted = true; accountOpen = false; root.forceActiveFocus(); }
+            return;
+        }
         if (api.keys.isPrevPage(event)) { event.accepted = true; switchTab(tab - 1); return; }
         if (api.keys.isNextPage(event)) { event.accepted = true; switchTab(tab + 1); return; }
 
+        if (api.keys.isFilters(event)) { event.accepted = true; toggleFavorite(); return; }
+
         if (tab === 0) {
+            if (gearFocused) {
+                if (event.key === Qt.Key_Down || api.keys.isCancel(event)) { event.accepted = true; gearFocused = false; }
+                else if (api.keys.isAccept(event)) { event.accepted = true; gearFocused = false; settingsOpen = true; settingsIndex = 0; }
+                else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Up) { event.accepted = true; }
+                return;
+            }
             if (event.key === Qt.Key_Left)  { event.accepted = true; homeIndex = L.clampIndex(homeIndex - 1, recents.length); }
             else if (event.key === Qt.Key_Right) { event.accepted = true; homeIndex = L.clampIndex(homeIndex + 1, recents.length); }
-            else if (event.key === Qt.Key_Down || event.key === Qt.Key_Up) { event.accepted = true; }
+            else if (event.key === Qt.Key_Up) { event.accepted = true; gearFocused = true; }
+            else if (event.key === Qt.Key_Down) { event.accepted = true; }
             else if (api.keys.isAccept(event)) { event.accepted = true; launchCurrent(); }
-            // Círculo no Início fica com o Pegasus (menu do sistema)
+            // Círculo no Início não faz nada (o menu do sistema fica no botão Options)
+            else if (api.keys.isCancel(event)) { event.accepted = true; }
             return;
         }
 
         if (api.keys.isCancel(event)) { event.accepted = true; switchTab(0); return; }
 
         if (tab === 1) {
+            if (api.keys.isDetails(event)) { event.accepted = true; setSort(sortMode + 1); return; }
             var cols = libraryGrid.columns;
             if (libOnFilters) {
                 if (event.key === Qt.Key_Left)  { event.accepted = true; setFilter(filterIndex - 1); }
@@ -289,6 +339,22 @@ FocusScope {
             else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) { event.accepted = true; }
             else if (api.keys.isAccept(event)) { event.accepted = true; launchCurrent(); }
         }
+    }
+
+    property int settingsIndex: 0
+    readonly property int settingsCount: 4
+    function settingsActivate(i) {
+        if (i === 0) { settingsOpen = false; accountOpen = true; }
+        else if (i === 1) setSound(!soundOn);
+        else if (i === 2) { settingsOpen = false; Internal.settings.reloadProviders(); }
+        else if (i === 3) settingsOpen = false;
+    }
+    function handleSettingsKey(event) {
+        if (api.keys.isCancel(event)) { event.accepted = true; settingsOpen = false; return; }
+        if (event.key === Qt.Key_Up)   { event.accepted = true; settingsIndex = L.clampIndex(settingsIndex - 1, settingsCount); sfx(sMove); return; }
+        if (event.key === Qt.Key_Down) { event.accepted = true; settingsIndex = L.clampIndex(settingsIndex + 1, settingsCount); sfx(sMove); return; }
+        if (api.keys.isAccept(event))  { event.accepted = true; settingsActivate(settingsIndex); return; }
+        event.accepted = true;
     }
 
     Timer {
@@ -382,8 +448,29 @@ FocusScope {
             }
         }
 
+        FastBlur {
+            id: backdropBlur
+            width: backdrop.width
+            height: backdrop.height
+            source: backdrop
+            radius: 40
+            visible: false
+        }
+        ShaderEffectSource {
+            id: glassSource
+            sourceItem: backdropBlur
+            width: backdrop.width
+            height: backdrop.height
+            textureSize: Qt.size(Math.round(backdrop.width / 2), Math.round(backdrop.height / 2))
+            smooth: true
+            hideSource: false
+            visible: false
+        }
+
         // ---------------------------------------------------- topo
         Glass {
+            backdrop: glassSource
+            stageItem: stage
             id: tabBar
             x: 56
             y: 32
@@ -391,19 +478,22 @@ FocusScope {
             width: tabRow.width + 8
             radius: height / 2
 
+            LiquidPill {
+                x: tabRow.x + (target ? target.x : 0)
+                target: tabRepeater.count > root.tab ? tabRepeater.itemAt(root.tab) : null
+            }
+
             Row {
                 id: tabRow
                 anchors.centerIn: parent
                 spacing: 2
 
                 Repeater {
+                    id: tabRepeater
                     model: root.tabNames
-                    delegate: Rectangle {
+                    delegate: Item {
                         width: tabLabel.implicitWidth + 40
                         height: 38
-                        radius: 19
-                        color: index === root.tab ? "#24ffffff" : "transparent"
-                        Behavior on color { ColorAnimation { duration: 200 } }
 
                         Text {
                             id: tabLabel
@@ -457,6 +547,40 @@ FocusScope {
                 font.family: "Roboto"
                 font.pixelSize: 15
                 font.letterSpacing: 0.5
+            }
+            Glass {
+                backdrop: glassSource
+                stageItem: stage
+                width: 46
+                height: 46
+                radius: 23
+                border.width: root.gearFocused ? 2 : (liquid ? 0 : 1)
+                border.color: root.gearFocused ? "#ffffff" : "#1cffffff"
+                anchors.verticalCenter: parent.verticalCenter
+                Canvas {
+                    anchors.centerIn: parent
+                    width: 22; height: 22
+                    onPaint: {
+                        var ctx = getContext("2d");
+                        ctx.reset();
+                        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+                        ctx.lineWidth = 1.7;
+                        ctx.lineJoin = "round";
+                        ctx.beginPath();
+                        for (var i = 0; i < 16; i++) {
+                            var a = i * Math.PI / 8;
+                            var r = (i % 2 === 0) ? 9.6 : 7.2;
+                            var x = 11 + Math.cos(a) * r, y = 11 + Math.sin(a) * r;
+                            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                        }
+                        ctx.closePath();
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(11, 11, 3.2, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                }
+                MouseArea { anchors.fill: parent; onClicked: { root.gearFocused = false; root.settingsIndex = 0; root.settingsOpen = true; } }
             }
         }
 
@@ -535,6 +659,8 @@ FocusScope {
             }
 
             Glass {
+                backdrop: glassSource
+                stageItem: stage
                 anchors.centerIn: parent
                 visible: root.entries.length === 0
                 width: 760
@@ -591,46 +717,125 @@ FocusScope {
             opacity: visible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 220 } }
 
-            Row {
-                id: filterRow
+            Glass {
+                id: filterBar
+                backdrop: glassSource
+                stageItem: stage
                 x: 56
-                y: 108
-                spacing: 8
+                y: 104
+                height: 44
+                width: filterRow.width + 8
+                radius: 22
+                border.width: root.libOnFilters ? 2 : (liquid ? 0 : 1)
+                border.color: root.libOnFilters ? "#b3ffffff" : "#1cffffff"
 
-                Repeater {
-                    model: root.filters
-                    delegate: Rectangle {
-                        readonly property bool active: index === root.filterIndex
-                        width: chipLabel.implicitWidth + 32
-                        height: 36
-                        radius: 18
-                        color: active ? "#e6ffffff" : "#14ffffff"
-                        border.width: root.libOnFilters && active ? 2 : 1
-                        border.color: root.libOnFilters && active ? "#ffffff" : "#1cffffff"
-                        Behavior on color { ColorAnimation { duration: 180 } }
+                LiquidPill {
+                    x: filterRow.x + (target ? target.x : 0)
+                    light: true
+                    target: filterRepeater.count > root.filterIndex ? filterRepeater.itemAt(root.filterIndex) : null
+                }
 
-                        Text {
-                            id: chipLabel
-                            anchors.centerIn: parent
-                            text: modelData.label
-                            color: parent.active ? "#0b0c0f" : "#c7ffffff"
-                            font.family: "Roboto"
-                            font.pixelSize: 14
-                            font.weight: parent.active ? Font.DemiBold : Font.Normal
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: root.setFilter(index)
+                Row {
+                    id: filterRow
+                    anchors.centerIn: parent
+                    spacing: 2
+
+                    Repeater {
+                        id: filterRepeater
+                        model: root.filters
+                        delegate: Item {
+                            readonly property bool active: index === root.filterIndex
+                            width: chipContent.width + 30
+                            height: 36
+
+                            Row {
+                                id: chipContent
+                                anchors.centerIn: parent
+                                spacing: 7
+                                Text {
+                                    text: modelData.label
+                                    color: active ? "#0b0c0f" : "#c7ffffff"
+                                    font.family: "Roboto"
+                                    font.pixelSize: 14
+                                    font.weight: active ? Font.DemiBold : Font.Normal
+                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                }
+                                Text {
+                                    anchors.baseline: parent.children[0].baseline
+                                    text: modelData.count
+                                    color: active ? "#8c0b0c0f" : "#6bffffff"
+                                    font.family: "Roboto"
+                                    font.pixelSize: 12
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: { root.libOnFilters = false; root.setFilter(index); }
+                            }
                         }
                     }
                 }
+            }
+
+            Glass {
+                id: sortBar
+                backdrop: glassSource
+                stageItem: stage
+                anchors.right: parent.right
+                anchors.rightMargin: 56
+                y: 104
+                height: 44
+                width: sortRow.width + 8
+                radius: 22
+
+                LiquidPill {
+                    x: sortRow.x + (target ? target.x : 0)
+                    target: sortRepeater.count > root.sortMode ? sortRepeater.itemAt(root.sortMode) : null
+                }
+                Row {
+                    id: sortRow
+                    anchors.centerIn: parent
+                    spacing: 2
+                    Repeater {
+                        id: sortRepeater
+                        model: L.SORTS
+                        delegate: Item {
+                            width: sortLabel.implicitWidth + 30
+                            height: 36
+                            Text {
+                                id: sortLabel
+                                anchors.centerIn: parent
+                                text: modelData
+                                color: index === root.sortMode ? "#ffffff" : "#a6ffffff"
+                                font.family: "Roboto"
+                                font.pixelSize: 14
+                                font.weight: index === root.sortMode ? Font.Medium : Font.Normal
+                            }
+                            MouseArea { anchors.fill: parent; onClicked: if (index !== root.sortMode) root.setSort(index) }
+                        }
+                    }
+                }
+            }
+
+            Text {
+                x: 56
+                y: 166
+                text: (root.filters.length > root.filterIndex ? root.filters[root.filterIndex].name : "")
+                      + "  ·  " + root.libraryList.length + (root.libraryList.length === 1 ? " jogo" : " jogos")
+                      + "  ·  " + L.SORTS[root.sortMode]
+                color: "#80ffffff"
+                font.family: "Roboto"
+                font.pixelSize: 12
+                font.weight: Font.Medium
+                font.letterSpacing: 1.8
+                font.capitalization: Font.AllUppercase
             }
 
             GridView {
                 id: libraryGrid
                 readonly property int columns: Math.max(1, Math.floor(width / cellWidth))
                 x: 56
-                y: 168
+                y: 190
                 width: parent.width - 112
                 height: parent.height - y - 262
                 cellWidth: 166
@@ -680,15 +885,6 @@ FocusScope {
                 }
             }
 
-            Text {
-                anchors.right: parent.right
-                anchors.rightMargin: 56
-                y: 116
-                text: root.libraryList.length + (root.libraryList.length === 1 ? " jogo" : " jogos")
-                color: "#73ffffff"
-                font.family: "Roboto"
-                font.pixelSize: 13
-            }
         }
 
         // ============================================== ABA: TROFÉUS
@@ -700,6 +896,8 @@ FocusScope {
             Behavior on opacity { NumberAnimation { duration: 220 } }
 
             Glass {
+                backdrop: glassSource
+                stageItem: stage
                 id: trophySummary
                 x: 56
                 y: 108
@@ -943,7 +1141,7 @@ FocusScope {
                             }
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: root.tab === 0 && root.recentsLabel === "Jogados recentemente" ? "Continuar" : "Jogar"
+                                text: root.current && L.playedTime(root.current) > 0 ? "Continuar" : "Jogar"
                                 color: "#0b0c0f"
                                 font.family: "Roboto"
                                 font.pixelSize: 16
@@ -959,6 +1157,8 @@ FocusScope {
             }
 
             Glass {
+                backdrop: glassSource
+                stageItem: stage
                 id: statsPanel
                 anchors.right: parent.right
                 anchors.bottom: root.tab === 2 ? undefined : parent.bottom
@@ -1040,6 +1240,90 @@ FocusScope {
             }
         }
 
+        // ---------------------------------------------------- configurações
+        Rectangle {
+            anchors.fill: parent
+            visible: root.settingsOpen
+            color: "#99050608"
+            MouseArea { anchors.fill: parent; onClicked: root.settingsOpen = false }
+
+            Glass {
+                backdrop: glassSource
+                stageItem: stage
+                anchors.right: parent.right
+                anchors.rightMargin: 56
+                y: 96
+                width: 520
+                height: settingsCol.implicitHeight + 64
+                radius: 32
+                tint: "#33101018"
+                MouseArea { anchors.fill: parent }
+
+                Column {
+                    id: settingsCol
+                    x: 28; y: 30
+                    width: parent.width - 56
+                    spacing: 6
+
+                    Text { text: "Configurações"; leftPadding: 12; bottomPadding: 12; color: "#ffffff"; font.family: "Roboto"; font.weight: Font.Light; font.pixelSize: 30 }
+
+                    Repeater {
+                        model: [
+                            { title: "Conta do RetroAchievements", detail: root.raState === "off" ? "Não conectada" : root.raUser() },
+                            { title: "Sons", detail: root.soundOn ? "Ligados" : "Desligados" },
+                            { title: "Atualizar biblioteca", detail: "Procura jogos novos na pasta Jogos" },
+                            { title: "Fechar", detail: "" }
+                        ]
+                        delegate: Rectangle {
+                            width: settingsCol.width
+                            height: modelData.detail ? 66 : 52
+                            radius: 18
+                            color: index === root.settingsIndex ? "#24ffffff" : "transparent"
+                            border.width: index === root.settingsIndex ? 1 : 0
+                            border.color: "#40ffffff"
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: 16
+                                spacing: 3
+                                Text { text: modelData.title; color: "#f2ffffff"; font.family: "Roboto"; font.pixelSize: 17 }
+                                Text { visible: modelData.detail !== ""; text: modelData.detail; color: "#8cffffff"; font.family: "Roboto"; font.pixelSize: 13 }
+                            }
+                            // chave liga/desliga dos sons
+                            Rectangle {
+                                visible: index === 1
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 52; height: 30; radius: 15
+                                color: root.soundOn ? "#e6ffffff" : "#26ffffff"
+                                Behavior on color { ColorAnimation { duration: 180 } }
+                                Rectangle {
+                                    width: 24; height: 24; radius: 12
+                                    y: 3
+                                    x: root.soundOn ? 25 : 3
+                                    color: root.soundOn ? "#0b0c0f" : "#ffffff"
+                                    Behavior on x { SpringAnimation { spring: 5; damping: 0.35 } }
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: { root.settingsIndex = index; root.settingsActivate(index); }
+                            }
+                        }
+                    }
+
+                    Item { width: 1; height: 10 }
+                    Text {
+                        width: parent.width
+                        leftPadding: 12
+                        wrapMode: Text.WordWrap
+                        color: "#73ffffff"; font.family: "Roboto"; font.pixelSize: 13; lineHeight: 1.35
+                        text: "Jogos: armazenamento interno › Jogos (snes, psx, ps2, wiiu, switch).\nPara abrir o P7 Station ao ligar o tablet: Configurações do Android › Apps › Apps padrão › Tela inicial.\nMenu do sistema: botão Options do controle."
+                    }
+                }
+            }
+        }
+
         // ------------------------------------------- conta do RetroAchievements
         Rectangle {
             anchors.fill: parent
@@ -1048,6 +1332,8 @@ FocusScope {
             MouseArea { anchors.fill: parent; onClicked: { root.accountOpen = false; root.forceActiveFocus(); } }
 
             Glass {
+                backdrop: glassSource
+                stageItem: stage
                 anchors.centerIn: parent
                 width: 560
                 height: 420
@@ -1124,11 +1410,15 @@ FocusScope {
             spacing: 26
 
             Repeater {
-                model: root.tab === 0
-                    ? [ { glyph: "cross", label: "Jogar" }, { glyph: "lr", label: "Trocar aba" } ]
-                    : [ { glyph: "cross", label: root.tab === 1 && root.libOnFilters ? "Escolher" : "Jogar" },
-                        { glyph: "circle", label: "Voltar" },
-                        { glyph: "lr", label: "Trocar aba" } ]
+                model: {
+                    var favLabel = root.current && root.current.fav ? "Desfavoritar" : "Favoritar";
+                    if (root.tab === 0)
+                        return [ { glyph: "cross", label: "Jogar" }, { glyph: "triangle", label: favLabel }, { glyph: "lr", label: "Trocar aba" } ];
+                    if (root.tab === 1)
+                        return [ { glyph: "cross", label: root.libOnFilters ? "Escolher" : "Jogar" }, { glyph: "triangle", label: favLabel },
+                                 { glyph: "square", label: "Ordenar" }, { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
+                    return [ { glyph: "cross", label: "Jogar" }, { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
+                }
                 delegate: Row {
                     spacing: 8
                     Canvas {
@@ -1148,6 +1438,10 @@ FocusScope {
                             if (modelData.glyph === "cross") {
                                 ctx.moveTo(6, 6); ctx.lineTo(12, 12);
                                 ctx.moveTo(12, 6); ctx.lineTo(6, 12);
+                            } else if (modelData.glyph === "triangle") {
+                                ctx.moveTo(9, 5.2); ctx.lineTo(12.9, 12); ctx.lineTo(5.1, 12); ctx.closePath();
+                            } else if (modelData.glyph === "square") {
+                                ctx.rect(5.6, 5.6, 6.8, 6.8);
                             } else {
                                 ctx.arc(9, 9, 3.6, 0, Math.PI * 2);
                             }
