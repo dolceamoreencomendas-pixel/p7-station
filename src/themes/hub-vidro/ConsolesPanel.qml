@@ -401,9 +401,10 @@ Item {
                 height: hintText.implicitHeight + 32
                 radius: 18
                 visible: hintText.text !== ""
-                color: "#1affb74d"
+                readonly property bool warn: panel.detail !== null && (!panel.detail.folder || !panel.detail.ok)
+                color: warn ? "#1affb74d" : "#12ffffff"
                 border.width: 1
-                border.color: "#4dffb74d"
+                border.color: warn ? "#4dffb74d" : "#26ffffff"
                 Text {
                     id: hintText
                     x: 20; y: 16
@@ -428,7 +429,7 @@ Item {
                 topPadding: 8
                 wrapMode: Text.WordWrap
                 color: "#73ffffff"; font.family: "Roboto"; font.pixelSize: 13; lineHeight: 1.3
-                text: panel.detail ? "Arquivos aceitos: " + panel.detail.sys.exts.join(", ") + ".  Use ◀ ▶ no Emulador para trocar." : ""
+                text: panel.detail ? "Arquivos aceitos: " + panel.detail.sys.exts.join(", ") + ".   No Emulador, use esquerda e direita para trocar." : ""
             }
         }
 

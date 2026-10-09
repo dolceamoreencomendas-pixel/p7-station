@@ -284,7 +284,7 @@ function setupHint(sys, emu, installed) {
     if (emu.type === "ra") {
         if (!retroarchPackage(installed))
             return "Instale o RetroArch (retroarch.com › Android › versão AArch64) e baixe o núcleo " + emu.label + ".";
-        return "No RetroArch, baixe o núcleo " + emu.label + ": Menu › Online Updater › Core Downloader.";
+        return "Este emulador usa o núcleo " + emu.label + " do RetroArch. Se o jogo não abrir, baixe o núcleo no RetroArch: Menu › Online Updater › Core Downloader.";
     }
     if (!installedPackage(emu, installed)) return "Instale o " + emu.label + " para jogar " + sys.name + ".";
     return "";
