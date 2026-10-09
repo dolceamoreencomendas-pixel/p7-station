@@ -14,6 +14,7 @@ Item {
     }
 
     function t() { return loader.item; }
+    function keys(k, n) { for (var i = 0; i < n; i++) driver.key(k); }
 
     function fakeAch(total, got) {
         var names = ["Primeiro passo", "Moeda de ouro", "Sem perder vida", "Chefe do castelo", "Caminho secreto",
@@ -66,15 +67,13 @@ Item {
         [1500, function () { driver.shot("29-cartao-antes"); driver.key(Qt.Key_Return); }],
         "frames:30-cartao:20:140",
         [1200, function () { t().resetLaunch(); }],
+        // jogo sem capa (capa gerada) na fileira
+        [600,  function () { keys(Qt.Key_Right, 3); }],
+        [1500, function () { driver.shot("42-capa-gerada"); keys(Qt.Key_Right, 3); }],
         // PS2 sem emulador
-        [600,  function () { driver.key(Qt.Key_Right); }],
         [1500, function () { driver.shot("40-ps2-sem-emulador"); driver.key(Qt.Key_Return); }],
         [900,  function () { driver.shot("41-aviso"); driver.key(Qt.Key_Return); }],
-        // jogo sem capa (capa gerada) na fileira
-        [600,  function () { driver.key(Qt.Key_Right); driver.key(Qt.Key_Right); driver.key(Qt.Key_Right); driver.key(Qt.Key_Right); }],
-        [1500, function () { driver.shot("42-capa-gerada"); }],
-        // página do jogo
-        [0,    function () { driver.key(Qt.Key_Left); driver.key(Qt.Key_Left); driver.key(Qt.Key_Left); driver.key(Qt.Key_Left); driver.key(Qt.Key_Left); driver.key(Qt.Key_Left); driver.key(Qt.Key_Left); driver.key(Qt.Key_Left); }],
+        [600,  function () { keys(Qt.Key_Left, 9); }],
         [1200, function () { injectRA(); }],
         [800,  function () { driver.key(Qt.Key_I); }],
         [900,  function () { driver.shot("50-detalhes"); driver.key(Qt.Key_Right); }],

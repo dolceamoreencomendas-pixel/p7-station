@@ -114,7 +114,7 @@ Item {
     readonly property real cardDevW: Math.min(width * 0.72, 420)
     readonly property real cardDevH: Math.max(150, fh * 0.78 + 26)
     readonly property real cardDevX: (width - cardDevW) / 2
-    readonly property real cardDevY: -24
+    readonly property real cardDevY: 8
 
     function launch() {
         if (launching || !entry) return;

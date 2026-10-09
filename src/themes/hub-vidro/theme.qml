@@ -1047,8 +1047,8 @@ FocusScope {
             FastBlur {
                 anchors.fill: parent
                 source: bgPair
-                radius: 26
-                opacity: 0.62
+                radius: 34
+                opacity: 0.55
             }
 
             // cor do console por cima, mais forte no alto à direita (atrás da vitrine)
