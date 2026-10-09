@@ -177,6 +177,7 @@ FocusScope {
         introFallback.stop();
         introWanted = false;
         introOn = true;
+        if (P7.introDone) P7.introDone();
         introAnim.restart();
         if (soundOn) sBoot.play();
     }
@@ -517,7 +518,7 @@ FocusScope {
         else if (api.memory.has("soundOn") && !api.memory.get("soundOn")) soundLevel = 0;
         if (api.memory.has("kidLock")) kidLock = api.memory.get("kidLock") === true;
         p7Load();
-        if (typeof P7 !== "undefined" && P7.firstShowSinceStart && P7.firstShowSinceStart()) {
+        if (typeof P7 !== "undefined" && P7.introPending && P7.introPending()) {
             introWanted = true;
             introOn = true;          // cobre o menu até a abertura começar
             introFallback.start();   // a leitura da biblioteca termina e chama a abertura; se não houver leitura, ela começa sozinha

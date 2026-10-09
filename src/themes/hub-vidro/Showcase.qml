@@ -58,7 +58,7 @@ Item {
     SequentialAnimation on swayAngle {
         loops: Animation.Infinite
         running: show.visible
-        paused: !show.moving
+        paused: show.visible && !show.moving
         NumberAnimation { from: 12; to: 30; duration: 9000; easing.type: Easing.InOutSine }
         NumberAnimation { from: 30; to: 12; duration: 9000; easing.type: Easing.InOutSine }
     }
@@ -89,7 +89,7 @@ Item {
         SequentialAnimation on floatY {
             loops: Animation.Infinite
             running: show.visible
-            paused: !show.moving
+            paused: show.visible && !show.moving
             NumberAnimation { from: -6; to: 8; duration: 6000; easing.type: Easing.InOutSine }
             NumberAnimation { from: 8; to: -6; duration: 6000; easing.type: Easing.InOutSine }
         }
@@ -109,7 +109,7 @@ Item {
                 id: discSpin
                 anchors.fill: parent
                 visible: media.kind === "disc"
-                NumberAnimation on rotation { from: 0; to: 360; duration: 18000; loops: Animation.Infinite; running: discSpin.visible && show.visible; paused: !show.moving }
+                NumberAnimation on rotation { from: 0; to: 360; duration: 18000; loops: Animation.Infinite; running: discSpin.visible && show.visible; paused: discSpin.visible && show.visible && !show.moving }
 
                 Item {
                     id: discFace

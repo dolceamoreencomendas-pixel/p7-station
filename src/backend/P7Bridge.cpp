@@ -134,10 +134,14 @@ QVariantList P7Bridge::controllers() const
     return out;
 }
 
-bool P7Bridge::firstShowSinceStart()
+namespace { bool g_intro_shown = false; }
+
+bool P7Bridge::introPending() const
 {
-    static bool shown = false;
-    const bool first = !shown;
-    shown = true;
-    return first;
+    return !g_intro_shown;
+}
+
+void P7Bridge::introDone()
+{
+    g_intro_shown = true;
 }

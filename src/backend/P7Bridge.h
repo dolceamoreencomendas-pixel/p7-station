@@ -26,6 +26,7 @@ public:
     Q_INVOKABLE QString storageRoot() const;
     // controles conectados: [{ name, hasBattery, level (0-100, -1 = sem dado), charging, full }]
     Q_INVOKABLE QVariantList controllers() const;
-    // true só na primeira chamada desde que o app abriu (a abertura animada não repete depois de cada jogo)
-    Q_INVOKABLE bool firstShowSinceStart();
+    // abertura animada: pendente até ser mostrada uma vez desde que o app abriu (não repete depois de cada jogo)
+    Q_INVOKABLE bool introPending() const;
+    Q_INVOKABLE void introDone();
 };
