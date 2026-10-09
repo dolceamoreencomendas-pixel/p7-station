@@ -71,7 +71,7 @@ shot 01-pede-permissao 6
 adb shell appops set --uid "$PKG" MANAGE_EXTERNAL_STORAGE allow
 key KEYCODE_BACK
 # abertura animada (só na primeira vez desde que o app abriu)
-for i in 1 2 3 4 5 6; do shot 02a-abertura-$i 1; done
+for i in 1 2 3 4 5 6 7 8 9 10; do shot 02a-abertura-$i 0.6; done
 shot 02-abriu 18
 adb shell cat /sdcard/Android/data/$PKG/files/P7Station/biblioteca/metadata.pegasus.txt > "$OUT/metadata-gerado.txt" 2>&1
 shot 03-inicio 5

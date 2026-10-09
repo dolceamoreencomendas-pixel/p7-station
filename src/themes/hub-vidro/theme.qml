@@ -170,8 +170,11 @@ FocusScope {
     // Só na primeira vez desde que o app abriu (não depois de cada jogo); qualquer botão pula.
     property bool introOn: false
     property bool introWanted: false
+    // a abertura começa quando a tela de carregamento sai (fim da leitura da biblioteca)
+    Timer { id: introFallback; interval: 1500; onTriggered: root.startIntro() }
     function startIntro() {
         if (!introWanted || Internal.scanner.running) return;
+        introFallback.stop();
         introWanted = false;
         introOn = true;
         introAnim.restart();
@@ -517,7 +520,7 @@ FocusScope {
         if (typeof P7 !== "undefined" && P7.firstShowSinceStart && P7.firstShowSinceStart()) {
             introWanted = true;
             introOn = true;          // cobre o menu até a abertura começar
-            Qt.callLater(startIntro);
+            introFallback.start();   // a leitura da biblioteca termina e chama a abertura; se não houver leitura, ela começa sozinha
         }
         syncLibrary();
         refresh();
