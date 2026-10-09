@@ -201,6 +201,52 @@ public class MainActivity extends org.qtproject.qt5.android.bindings.QtActivity 
     }
 
 
+    // P7 Station: emuladores de Switch da família yuzu (Eden, Citron, Nyushu e outros que
+    // aparecerem). Todos têm a tela de jogo em <algo>_emu.activities.EmulationActivity; é por ela
+    // que o app acha cada um, sem precisar conhecer o nome do pacote de antemão.
+    // Uma linha por app: pacote \t classe da tela de jogo \t nome do app \t última atualização (ms)
+    private static final java.util.HashMap<String, String> s_forkCache = new java.util.HashMap<>();
+    private static final java.util.regex.Pattern FORK_ACTIVITY =
+        java.util.regex.Pattern.compile("^[\\w.]+_emu\\.activities\\.EmulationActivity$");
+
+    public static String switchEmulators() {
+        StringBuilder out = new StringBuilder();
+        try {
+            PackageManager pm = m_self.getPackageManager();
+            for (PackageInfo info : pm.getInstalledPackages(0)) {
+                if (info.applicationInfo == null
+                    || (info.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0)
+                    continue;
+                String key = info.packageName + "@" + info.lastUpdateTime;
+                String found = s_forkCache.get(key);
+                if (found == null) {
+                    found = "";
+                    try {
+                        PackageInfo full = pm.getPackageInfo(info.packageName, PackageManager.GET_ACTIVITIES);
+                        if (full.activities != null) {
+                            for (android.content.pm.ActivityInfo a : full.activities) {
+                                if (a.name != null && FORK_ACTIVITY.matcher(a.name).matches()) { found = a.name; break; }
+                            }
+                        }
+                    }
+                    catch (Exception e) {
+                        android.util.Log.w("P7", "switchEmulators " + info.packageName + ": " + e);
+                    }
+                    s_forkCache.put(key, found);
+                }
+                if (found.isEmpty())
+                    continue;
+                String label = String.valueOf(pm.getApplicationLabel(info.applicationInfo)).replace('\t', ' ').replace('\n', ' ');
+                out.append(info.packageName).append('\t').append(found).append('\t')
+                   .append(label).append('\t').append(info.lastUpdateTime).append('\n');
+            }
+        }
+        catch (Exception e) {
+            android.util.Log.w("P7", "switchEmulators: " + e);
+        }
+        return out.toString();
+    }
+
     // P7 Station: só consulta, sem abrir a tela de configurações de novo
     // P7 Station: pacotes instalados, um por linha (para achar os emuladores)
     public static String installedPackages() {

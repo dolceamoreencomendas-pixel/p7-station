@@ -14,6 +14,8 @@ public:
 
     // nomes dos pacotes instalados no aparelho (para achar os emuladores)
     Q_INVOKABLE QStringList installedPackages() const;
+    // emuladores de Switch da família yuzu instalados: [{ pkg, activity, label, updated }]
+    Q_INVOKABLE QVariantList switchEmulators() const;
     // subpastas de uma pasta (sem as ocultas), em ordem alfabética
     Q_INVOKABLE QStringList subdirs(const QString& path) const;
     Q_INVOKABLE bool isDir(const QString& path) const;

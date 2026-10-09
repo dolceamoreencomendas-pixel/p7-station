@@ -368,3 +368,38 @@ function toSet(list) {
     (list || []).forEach(function (p) { set[p] = true; });
     return set;
 }
+
+// ------------------------------------------------------------------ Switch: emuladores achados no aparelho
+// Os emuladores de Switch são quase todos derivados do yuzu e trocam de nome toda hora (Eden,
+// Citron, Nyushu...). O app procura no aparelho qualquer um deles (pela tela de jogo,
+// <algo>_emu.activities.EmulationActivity) e coloca na lista do Switch com o nome que o próprio
+// app mostra. Os achados que não estão na lista fixa entram primeiro: se a pessoa instalou,
+// é porque quer usar (o mais atualizado por último vem antes).
+// found: [{ pkg, activity, label, updated }]
+var FORK_ARGS = "-a android.nfc.action.TECH_DISCOVERED -d {file.uri}";
+
+// já está na lista fixa: mesmo pacote, mesma tela de jogo e o nome do app bate
+// (um app com outro nome usando o mesmo pacote entra separado, com o nome dele)
+function knownPair(sys, pkg, activity, label) {
+    for (var i = 0; i < sys.emus.length; i++) {
+        var e = sys.emus[i];
+        if (e.type !== "app" || e.fork || e.pkgs.indexOf(pkg) === -1) continue;
+        if (label && squash(label).indexOf(squash(e.label)) === -1) continue;
+        if (String(e.args).indexOf("{pkg}/" + activity + " ") !== -1) return true;
+    }
+    return false;
+}
+
+function registerSwitchEmus(found) {
+    var sys = byKey("switch");
+    if (!sys) return [];
+    sys.emus = sys.emus.filter(function (e) { return !e.fork; });
+    var list = (found || []).filter(function (f) { return f && f.pkg && f.activity && !knownPair(sys, f.pkg, f.activity, f.label); });
+    list.sort(function (a, b) { return (Number(b.updated) || 0) - (Number(a.updated) || 0); });
+    var added = list.map(function (f) {
+        return { id: "app:fork:" + f.pkg, type: "app", fork: true, label: f.label || f.pkg, pkgs: [f.pkg],
+                 args: "-n {pkg}/" + f.activity + " " + FORK_ARGS, note: "Instalado neste tablet" };
+    });
+    sys.emus = added.concat(sys.emus);
+    return added;
+}

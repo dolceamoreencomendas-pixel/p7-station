@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Emulador de Switch de mentira, só para o teste: tem a mesma tela de jogo dos derivados do yuzu
+     (org.yuzu.yuzu_emu.activities.EmulationActivity) num pacote que o P7 Station não conhece. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.teste.nyushu">
+    <application android:label="Nyushu Teste">
+        <activity android:name="org.yuzu.yuzu_emu.activities.EmulationActivity" android:exported="true" />
+    </application>
+</manifest>

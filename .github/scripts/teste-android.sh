@@ -45,6 +45,9 @@ else
     echo "RetroArch não foi baixado" > "$OUT/retroarch-instalacao.txt"
 fi
 
+# emulador de Switch que o app não conhece pelo nome (tem que ser achado sozinho)
+[ -f emus/nyushu-teste.apk ] && adb install -r -g emus/nyushu-teste.apk > "$OUT/emu-falso-instalacao.txt" 2>&1
+
 # ---------------------------------------------------------------- jogos
 # Pasta com nome livre, como a de quem já tem os jogos organizados: o app deve achar sozinho.
 adb shell mkdir -p "/sdcard/ROMs/Super\ Nintendo" /sdcard/ROMs/PS1 /sdcard/ROMs/psp "/sdcard/ROMs/Nintendo\ 64" /sdcard/ROMs/gba /sdcard/ROMs/ps2
@@ -176,6 +179,23 @@ shot 16-navegou-depois-de-voltar 2
 # parado de novo depois de voltar do jogo
 sleep 32
 adb logcat -d | grep -E "P7: quadros" > "$OUT/quadros-parado-depois-do-jogo.txt"
+
+# ---------------------------------------------------------------- Switch pelo emulador achado sozinho
+# Biblioteca: sobe até a ordem, volta para a primeira prateleira (Favoritos) e desce para o Switch
+adb logcat -c
+key KEYCODE_E
+for i in 1 2 3 4 5 6 7 8; do adb shell input keyevent KEYCODE_DPAD_UP; sleep 0.4; done
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_DOWN
+shot 17-switch-na-biblioteca 2
+key KEYCODE_I
+shot 17a-switch-pagina-do-jogo 2
+key KEYCODE_ESCAPE
+key KEYCODE_ENTER
+shot 17b-switch-abriu 8
+top_activity > "$OUT/tela-ativa-switch.txt"
+adb logcat -d | grep -E "P7FALSO|P7: emuladores de Switch|P7: abrindo|ActivityTaskManager: START" > "$OUT/switch-emulador-achado.txt"
+adb shell am force-stop com.teste.nyushu
 
 # ---------------------------------------------------------------- registros
 adb logcat -d > "$OUT/logcat-completo.txt"

@@ -110,6 +110,11 @@ FocusScope {
         if (typeof P7 === "undefined") return;
         p7Storage = P7.storageRoot();
         p7Installed = EM.toSet(P7.installedPackages());
+        // emuladores de Switch derivados do yuzu achados no tablet (Nyushu, Citron, Eden...)
+        if (P7.switchEmulators) {
+            var forks = EM.registerSwitchEmus(P7.switchEmulators());
+            if (forks.length) console.warn("P7: emuladores de Switch achados: " + forks.map(function (f) { return f.label + " (" + f.pkgs[0] + ")"; }).join(", "));
+        }
         var ls = function (p) { return P7.subdirs(p); };
         var roots = p7Root ? [p7Root] : EM.candidateRoots(p7Storage, ls);
         p7Roots = roots;

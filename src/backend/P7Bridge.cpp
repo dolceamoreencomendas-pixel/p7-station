@@ -35,6 +35,28 @@ QStringList P7Bridge::installedPackages() const
 #endif
 }
 
+QVariantList P7Bridge::switchEmulators() const
+{
+    QVariantList out;
+#ifdef Q_OS_ANDROID
+    const QAndroidJniObject result = QAndroidJniObject::callStaticObjectMethod(
+        android::jni_classname(), "switchEmulators", "()Ljava/lang/String;");
+    const QStringList lines = result.toString().split(QChar('\n'), Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        const QStringList f = line.split(QChar('\t'));
+        if (f.size() < 4)
+            continue;
+        QVariantMap m;
+        m[QStringLiteral("pkg")] = f[0];
+        m[QStringLiteral("activity")] = f[1];
+        m[QStringLiteral("label")] = f[2].trimmed();
+        m[QStringLiteral("updated")] = f[3].toDouble();
+        out << m;
+    }
+#endif
+    return out;
+}
+
 QStringList P7Bridge::subdirs(const QString& path) const
 {
     QDir dir(path);
