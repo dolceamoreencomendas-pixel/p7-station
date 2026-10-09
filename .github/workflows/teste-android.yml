@@ -47,25 +47,36 @@ jobs:
           cp installdir/build/outputs/apk/debug/installdir-debug.apk apk/p7station-teste-x86_64.apk
 
       - name: Baixar RetroArch e núcleo Snes9x, criar ROM de teste
+        continue-on-error: true
+        shell: bash
         run: |
           mkdir -p emus
+          exec > >(tee emus/download-log.txt) 2>&1
+          set -x
           python3 .github/scripts/make_snes_rom.py emus/teste.sfc
           AAPT=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)aapt
-          V=$(curl -sL https://buildbot.libretro.com/stable/ | grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1)
-          echo "RetroArch estável: $V"
-          curl -sL "https://buildbot.libretro.com/stable/$V/android/" | grep -oE 'href="[^"]+\.apk"' | tee emus/lista.txt
+          BB=https://buildbot.libretro.com
+          VERSIONS=$(curl -sL $BB/stable/ | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -Vu | tail -4 | tac)
+          echo "versões: $VERSIONS"
           ABI=""
-          for name in RetroArch.apk RetroArch_aarch64.apk; do
-            curl -sfL -o "emus/dl_$name" "https://buildbot.libretro.com/stable/$V/android/$name" || continue
-            unzip -l "emus/dl_$name" | grep -oE "lib/[^/]+/" | sort -u | sed "s/^/$name: /"
-            if [ -z "$ABI" ] && unzip -l "emus/dl_$name" | grep -q "lib/x86_64/"; then cp "emus/dl_$name" emus/RetroArch.apk; ABI=x86_64; fi
+          for V in $VERSIONS; do
+            for name in RetroArch.apk RetroArch_aarch64.apk; do
+              curl -sfL -o "emus/dl_$name" "$BB/stable/$V/android/$name" || { rm -f "emus/dl_$name"; continue; }
+              echo "baixado $V/$name"; unzip -l "emus/dl_$name" | grep -oE "lib/[^/]+/" | sort -u
+              if [ -z "$ABI" ] && unzip -l "emus/dl_$name" | grep -q "lib/x86_64/"; then cp "emus/dl_$name" emus/RetroArch.apk; ABI=x86_64; fi
+            done
+            [ -f emus/dl_RetroArch.apk ] || [ -f emus/dl_RetroArch_aarch64.apk ] && break
           done
-          if [ -z "$ABI" ]; then cp emus/dl_RetroArch_aarch64.apk emus/RetroArch.apk || cp emus/dl_RetroArch.apk emus/RetroArch.apk; ABI=arm64-v8a; fi
+          if [ -z "$ABI" ]; then
+            if [ -f emus/dl_RetroArch_aarch64.apk ]; then cp emus/dl_RetroArch_aarch64.apk emus/RetroArch.apk; else cp emus/dl_RetroArch.apk emus/RetroArch.apk; fi
+            ABI=arm64-v8a
+          fi
           $AAPT dump badging emus/RetroArch.apk | grep -E "^package|native-code" | tee emus/badging.txt
           sed -nE "s/^package: name='([^']+)'.*/\1/p" emus/badging.txt > emus/retroarch-pacote.txt
           echo "pacote: $(cat emus/retroarch-pacote.txt) · abi: $ABI"
-          curl -sfL -o emus/core.zip "https://buildbot.libretro.com/nightly/android/latest/$ABI/snes9x_libretro_android.so.zip"
-          unzip -o emus/core.zip -d emus/
+          for url in "$BB/nightly/android/latest/$ABI/snes9x_libretro_android.so.zip" "$BB/stable/$V/android/$ABI/snes9x_libretro_android.so.zip"; do
+            curl -sfL -o emus/core.zip "$url" && unzip -o emus/core.zip -d emus/ && break
+          done
           ls -la emus
 
       - name: Ligar aceleração do emulador
@@ -92,6 +103,6 @@ jobs:
           gh release create "teste-${{ github.run_number }}" --prerelease \
             --title "Teste ${{ github.run_number }} (Android virtual)" \
             --notes "Prints e registros do teste automático. Não é para instalar." \
-            prints.zip resultado/*.png resultado/*.txt emus/badging.txt
+            prints.zip resultado/*.png resultado/*.txt emus/*.txt
         env:
           GH_TOKEN: ${{ github.token }}
