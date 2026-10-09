@@ -65,6 +65,12 @@ key KEYCODE_BACK
 shot 02-abriu 25
 adb shell cat /sdcard/Android/data/$PKG/files/P7Station/biblioteca/metadata.pegasus.txt > "$OUT/metadata-gerado.txt" 2>&1
 shot 03-inicio 5
+# parado no menu por 22 s: o registro mostra quantos quadros o app desenhou a cada 10 s
+sleep 22
+shot 03b-parado 1
+# segurar Triângulo (favoritar) deve marcar uma vez só, sem ficar piscando
+adb shell input keyevent --longpress KEYCODE_F
+shot 03c-segurou-triangulo 2
 
 # Consoles e emuladores: engrenagem > primeiro item
 key KEYCODE_DPAD_UP
@@ -112,6 +118,10 @@ grep -iE "P7:|RetroArch|libretro|snes9x|ActivityManager: (START|Displayed)|Activ
 adb shell am force-stop "$RA_PKG" 2>/dev/null
 start_app
 shot 15-voltou 8
+# depois de voltar do jogo, o controle tem que andar sem tocar na tela
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_RIGHT
+shot 16-navegou-depois-de-voltar 2
 
 # ---------------------------------------------------------------- registros
 adb logcat -d > "$OUT/logcat-completo.txt"

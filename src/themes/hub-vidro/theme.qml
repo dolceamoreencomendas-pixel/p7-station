@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import QtQuick.Window 2.15
 import QtGraphicalEffects 1.12
 import QtMultimedia 5.8
 import "logic.js" as L
@@ -127,6 +128,18 @@ FocusScope {
     Connections {
         target: api.allGames
         function onCountChanged() { refreshLater.restart(); }
+    }
+
+    // Medição: quantos quadros o app desenhou nos últimos 10 s (vai para o registro do Android)
+    property int framesDrawn: 0
+    Connections {
+        target: root.Window.window
+        function onFrameSwapped() { root.framesDrawn++; }
+    }
+    Timer {
+        interval: 10000; repeat: true
+        running: Qt.application.state === Qt.ApplicationActive
+        onTriggered: { console.warn("P7: quadros em 10 s: " + root.framesDrawn); root.framesDrawn = 0; }
     }
 
     function playMove()    { sfx(sMove); }
@@ -337,6 +350,7 @@ FocusScope {
             api.memory.set("filterKey", filters[filterIndex].key);
         }
         if (soundOn) sLaunch.play();
+        launchGuardUntil = Date.now() + 2000;   // um X segurado não abre o jogo duas vezes
         current.game.launch();
     }
 
@@ -363,6 +377,9 @@ FocusScope {
         target: Qt.application
         function onStateChanged() {
             if (Qt.application.state === Qt.ApplicationActive) {
+                // volta do jogo (ou de outro app): o controle precisa encontrar o foco aqui
+                releaseAllKeys();
+                if (!root.accountOpen) root.forceActiveFocus();
                 if (!consoles.open) syncLibrary();
                 refresh();
                 loadAchievements();
@@ -371,7 +388,34 @@ FocusScope {
     }
 
     // ------------------------------------------------------------ controle
+    // Botões de ação (X, Círculo, Triângulo, Quadrado, L1, R1) valem uma vez por aperto.
+    // No Android, um botão do controle segurado chega repetido como se fosse apertado de novo,
+    // sem a marca de repetição; por isso o tema guarda quais botões estão abaixados.
+    // As setas continuam repetindo ao segurar, para andar rápido pela lista.
+    property var heldKeys: ({})
+    property double launchGuardUntil: 0
+    function isActionKey(event) {
+        return api.keys.isAccept(event) || api.keys.isCancel(event) || api.keys.isFilters(event)
+            || api.keys.isDetails(event) || api.keys.isPrevPage(event) || api.keys.isNextPage(event);
+    }
+    function releaseAllKeys() { heldKeys = ({}); }
+    Keys.onReleased: {
+        if (event.isAutoRepeat) return;
+        if (heldKeys[event.key]) delete heldKeys[event.key];
+    }
+    onActiveFocusChanged: releaseAllKeys()
+
     Keys.onPressed: {
+        if (isActionKey(event)) {
+            var now = Date.now();
+            var since = heldKeys[event.key];
+            // repetição: ignora; mas se o "solta" se perdeu (ex.: troca de app), libera depois de 2,5 s
+            if (event.isAutoRepeat || (since && now - since < 2500) || now < launchGuardUntil) {
+                event.accepted = true;
+                return;
+            }
+            heldKeys[event.key] = now;
+        }
         if (consoles.open) { consoles.handleKey(event); return; }
         if (settingsOpen) { handleSettingsKey(event); return; }
         if (accountOpen) {
@@ -750,6 +794,8 @@ FocusScope {
                 height: 430
                 entry: root.current
                 visible: root.current !== null
+                active: !root.settingsOpen && !root.accountOpen && !consoles.open
+                        && Qt.application.state === Qt.ApplicationActive
             }
 
             Glass {

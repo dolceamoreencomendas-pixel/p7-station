@@ -43,12 +43,22 @@ Item {
 
     // entrada suave quando troca de jogo
     property real enter: 1
-    onEntryChanged: { enterAnim.restart(); }
+    onEntryChanged: { enterAnim.restart(); wake(); }
     NumberAnimation { id: enterAnim; target: show; property: "enter"; from: 0; to: 1; duration: 420; easing.type: Easing.OutCubic }
+
+    // O movimento dura alguns segundos depois de escolher um jogo e para: parado no menu,
+    // a tela não precisa ser redesenhada (economiza bateria e não esquenta o tablet).
+    property bool active: true            // o tema desliga quando há algo por cima ou o app está em segundo plano
+    property bool alive: true
+    readonly property bool moving: show.visible && show.active && show.alive
+    function wake() { alive = true; idleTimer.restart(); }
+    Timer { id: idleTimer; interval: 5000; running: true; onTriggered: show.alive = false }
+    onActiveChanged: if (active) wake()
 
     SequentialAnimation on swayAngle {
         loops: Animation.Infinite
         running: show.visible
+        paused: !show.moving
         NumberAnimation { from: 12; to: 30; duration: 9000; easing.type: Easing.InOutSine }
         NumberAnimation { from: 30; to: 12; duration: 9000; easing.type: Easing.InOutSine }
     }
@@ -79,6 +89,7 @@ Item {
         SequentialAnimation on floatY {
             loops: Animation.Infinite
             running: show.visible
+            paused: !show.moving
             NumberAnimation { from: -6; to: 8; duration: 6000; easing.type: Easing.InOutSine }
             NumberAnimation { from: 8; to: -6; duration: 6000; easing.type: Easing.InOutSine }
         }
@@ -98,7 +109,7 @@ Item {
                 id: discSpin
                 anchors.fill: parent
                 visible: media.kind === "disc"
-                NumberAnimation on rotation { from: 0; to: 360; duration: 18000; loops: Animation.Infinite; running: discSpin.visible && show.visible }
+                NumberAnimation on rotation { from: 0; to: 360; duration: 18000; loops: Animation.Infinite; running: discSpin.visible && show.visible; paused: !show.moving }
 
                 Item {
                     id: discFace
