@@ -35,7 +35,8 @@ Item {
         tint: "#66080712"
         visible: page.visible
     }
-    MouseArea { anchors.fill: parent; onClicked: {} }
+    // toque fora dos botões fecha a página
+    MouseArea { anchors.fill: parent; onClicked: if (page.host) page.host.detailsOpen = false }
 
     // ---------------------------------------------------- capa
     Item {

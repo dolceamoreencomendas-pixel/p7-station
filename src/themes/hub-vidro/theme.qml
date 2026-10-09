@@ -983,14 +983,15 @@ FocusScope {
             Component.onCompleted: load()
             function load() {
                 var img = front === 0 ? bgB : bgA;
-                if ((front === 0 ? bgA : bgB).source == want && want !== "") return;
+                if ((front === 0 ? bgA : bgB).key === want && want !== "") return;
+                img.key = want;
                 img.source = want;
                 if (want === "") { bgA.shown = false; bgB.shown = false; return; }
                 // a mesma imagem já carregada (voltou para um jogo de antes): mostra na hora
                 if (img.status === Image.Ready) ready(img);
             }
             function ready(img) {
-                if (String(img.source) !== String(want)) return;
+                if (img.key !== want) return;
                 front = img === bgA ? 0 : 1;
                 bgA.shown = img === bgA;
                 bgB.shown = img === bgB;
@@ -1009,6 +1010,7 @@ FocusScope {
                 Image {
                     id: bgA
                     property bool shown: false
+                    property string key: ""
                     anchors.fill: parent
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
@@ -1020,12 +1022,13 @@ FocusScope {
                     Behavior on scale { NumberAnimation { duration: 1400; easing.type: Easing.OutCubic } }
                     onStatusChanged: {
                         if (status === Image.Ready) backdrop.ready(bgA);
-                        else if (status === Image.Error && String(source) === String(backdrop.want) && !root.bgUseArt) root.bgUseArt = true;
+                        else if (status === Image.Error && key === backdrop.want && !root.bgUseArt) root.bgUseArt = true;
                     }
                 }
                 Image {
                     id: bgB
                     property bool shown: false
+                    property string key: ""
                     anchors.fill: parent
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
@@ -1037,7 +1040,7 @@ FocusScope {
                     Behavior on scale { NumberAnimation { duration: 1400; easing.type: Easing.OutCubic } }
                     onStatusChanged: {
                         if (status === Image.Ready) backdrop.ready(bgB);
-                        else if (status === Image.Error && String(source) === String(backdrop.want) && !root.bgUseArt) root.bgUseArt = true;
+                        else if (status === Image.Error && key === backdrop.want && !root.bgUseArt) root.bgUseArt = true;
                     }
                 }
             }
@@ -1287,7 +1290,7 @@ FocusScope {
             Behavior on opacity { NumberAnimation { duration: 240 } }
 
             readonly property var tinfo: root.tab === 0 ? root.trophyInfo(root.current) : ({ kind: "none" })
-            readonly property real rowTop: stage.height - 322
+            readonly property real rowTop: stage.height - 334
 
             // ---------------- o jogo em destaque (esquerda)
             Column {
@@ -1330,8 +1333,8 @@ FocusScope {
                     font.weight: Font.Light
                     // nomes longos ficam menores, sempre em até duas linhas
                     font.pixelSize: text.length > 34 ? 54 : (text.length > 22 ? 64 : 76)
-                    font.letterSpacing: font.pixelSize > 60 ? -2 : -1.4
-                    lineHeight: 1.0
+                    font.letterSpacing: text.length > 22 ? -1.4 : -2
+                    lineHeight: 0.92
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
                     elide: Text.ElideRight
@@ -1502,7 +1505,7 @@ FocusScope {
             ListView {
                 id: recentRow
                 x: 64
-                y: homeView.rowTop + 22
+                y: homeView.rowTop + 34
                 width: stage.width - 64
                 height: 250
                 orientation: ListView.Horizontal

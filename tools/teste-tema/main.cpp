@@ -9,6 +9,7 @@
 #include <QKeyEvent>
 #include <QDir>
 #include <QDebug>
+#include <QTimer>
 
 class Driver : public QObject {
     Q_OBJECT
@@ -61,6 +62,14 @@ int main(int argc, char *argv[]) {
     view.setSource(QUrl::fromLocalFile(here + "/roteiro.qml"));
     if (view.status() != QQuickView::Ready) { qWarning() << view.errors(); return 1; }
     view.show();
+    view.requestActivate();
+    // sem gerenciador de janelas a janela pode não ficar ativa sozinha: insiste até ficar
+    QTimer *t = new QTimer(&view);
+    QObject::connect(t, &QTimer::timeout, [&view, t]() {
+        if (view.isActive()) { t->stop(); return; }
+        view.requestActivate();
+    });
+    t->start(300);
     return app.exec();
 }
 #include "main.moc"
