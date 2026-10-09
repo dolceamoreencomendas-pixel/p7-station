@@ -1958,50 +1958,55 @@ FocusScope {
             }
         }
             // ---------------------------------------------------- abertura
+        // Continua de onde a tela de carregamento parou (mesmo ícone, mesmo lugar): um brilho
+        // se abre atrás do ícone com o som de abertura e o menu aparece. Cerca de 1,5 s.
         Item {
             id: intro
             anchors.fill: parent
             visible: root.introOn
             property real glow: 0
-            property real logo: 0
-            property real word: 0
+            property real pop: 0
             property real fade: 1
+            // mesma medida e posição do ícone da tela de carregamento (que é desenhada na escala da janela)
+            readonly property real logoSize: Math.min(root.width, root.height) * 0.26 / root.ui
+            readonly property real ws: Math.min(root.width / 1280, root.height / 720) / root.ui   // vpx() da tela de carregamento
 
-            Rectangle { anchors.fill: parent; color: "#050410"; opacity: intro.fade }
+            Rectangle { anchors.fill: parent; color: "#08061c"; opacity: intro.fade }
             RadialGradient {
                 anchors.fill: parent
                 opacity: intro.glow * intro.fade
-                horizontalRadius: parent.width * (0.25 + 0.35 * intro.glow)
+                horizontalRadius: parent.width * (0.18 + 0.42 * intro.glow)
                 verticalRadius: horizontalRadius
+                verticalOffset: -intro.logoSize * 0.45
                 gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#5a3cff" }
-                    GradientStop { position: 0.45; color: "#1f1660" }
+                    GradientStop { position: 0.0; color: "#6a4cff" }
+                    GradientStop { position: 0.4; color: "#24186e" }
                     GradientStop { position: 1.0; color: "transparent" }
                 }
             }
             Image {
                 id: introLogo
                 source: "p7-icon.png"
-                width: 200; height: 200
-                anchors.centerIn: parent
-                anchors.verticalCenterOffset: -40
+                width: intro.logoSize; height: width
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.verticalCenter
+                anchors.bottomMargin: 10 * intro.ws
+                sourceSize.width: 512
                 smooth: true
-                mipmap: true
-                opacity: intro.logo * intro.fade
-                scale: 0.86 + 0.14 * intro.logo
-                onStatusChanged: console.warn("P7: ícone da abertura: " + status + " " + source)
+                opacity: intro.fade
+                scale: 1 + 0.07 * intro.pop
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: introLogo.bottom
-                anchors.topMargin: 34
+                anchors.top: parent.verticalCenter
+                anchors.topMargin: 28 * intro.ws
                 text: "P7  STATION"
                 color: "#ffffff"
                 font.family: "Roboto"
-                font.pixelSize: 26
+                font.pixelSize: 26 * intro.ws
                 font.weight: Font.Light
-                font.letterSpacing: 4 + 10 * intro.word
-                opacity: intro.word * intro.fade
+                font.letterSpacing: (8 + 5 * intro.pop) * intro.ws
+                opacity: (0.9 + 0.1 * intro.pop) * intro.fade
             }
             MouseArea { anchors.fill: parent; onClicked: root.skipIntro() }
 
@@ -2009,23 +2014,16 @@ FocusScope {
                 id: introAnim
                 PropertyAction { target: intro; property: "fade"; value: 1 }
                 ParallelAnimation {
-                    NumberAnimation { target: intro; property: "glow"; from: 0; to: 1; duration: 700; easing.type: Easing.OutCubic }
-                    SequentialAnimation {
-                        PauseAnimation { duration: 250 }
-                        NumberAnimation { target: intro; property: "logo"; from: 0; to: 1; duration: 650; easing.type: Easing.OutBack }
-                    }
-                    SequentialAnimation {
-                        PauseAnimation { duration: 550 }
-                        NumberAnimation { target: intro; property: "word"; from: 0; to: 1; duration: 700; easing.type: Easing.OutCubic }
-                    }
+                    NumberAnimation { target: intro; property: "glow"; from: 0; to: 1; duration: 750; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: intro; property: "pop"; from: 0; to: 1; duration: 750; easing.type: Easing.OutBack }
                 }
-                PauseAnimation { duration: 450 }
+                PauseAnimation { duration: 250 }
                 ScriptAction { script: introOutAnim.restart() }
             }
             SequentialAnimation {
                 id: introOutAnim
-                NumberAnimation { target: intro; property: "fade"; to: 0; duration: 420; easing.type: Easing.InOutQuad }
-                ScriptAction { script: { root.introOn = false; intro.glow = 0; intro.logo = 0; intro.word = 0; intro.fade = 1; } }
+                NumberAnimation { target: intro; property: "fade"; to: 0; duration: 450; easing.type: Easing.InOutQuad }
+                ScriptAction { script: { root.introOn = false; intro.glow = 0; intro.pop = 0; intro.fade = 1; } }
             }
         }
     }
