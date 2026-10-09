@@ -7,10 +7,19 @@ import "config.js" as Cfg
 import "emulators.js" as EM
 
 // Hub Vidro — tema do Pegasus para o Xiaomi Pad 7 com controle.
-// Abas: Início (recentes + Continuar), Biblioteca (por console ou A–Z), Troféus (RetroAchievements).
+// Abas: Início (o jogo em destaque + recentes), Biblioteca (prateleiras por console),
+// Troféus (RetroAchievements, com as conquistas de cada jogo). Quadrado abre a página do jogo.
 FocusScope {
     id: root
     focus: true
+
+    // fontes do P7 Station (Sora nos títulos, Manrope no resto; licença OFL, junto dos arquivos)
+    FontLoader { source: "fonts/Sora-Light.ttf" }
+    FontLoader { source: "fonts/Sora-Regular.ttf" }
+    FontLoader { source: "fonts/Sora-SemiBold.ttf" }
+    FontLoader { source: "fonts/Manrope-Regular.ttf" }
+    FontLoader { source: "fonts/Manrope-Medium.ttf" }
+    FontLoader { source: "fonts/Manrope-Bold.ttf" }
 
     // ---------------------------------------------------------------- dados
     property var entries: []
@@ -21,12 +30,15 @@ FocusScope {
     property int tab: 0                       // 0 Início · 1 Biblioteca · 2 Troféus
     readonly property var tabNames: ["Início", "Biblioteca", "Troféus"]
 
-    property var filters: []
-    property int filterIndex: 0
-    property var libraryList: []
-    property int libIndex: 0
-    property bool libOnFilters: false
+    // Biblioteca em prateleiras: uma por console; cada prateleira lembra a coluna escolhida
+    property var shelves: []
+    property int libShelf: 0
+    property int libCol: 0
+    property var shelfCols: ({})
+    property bool libOnSort: false
     property int sortMode: 0                  // 0 A–Z · 1 Recentes · 2 Mais jogados
+    readonly property int libCount: entries.length
+
     property bool settingsOpen: false
     property bool gearFocused: false
     // sons: 0 desligados · 1 baixo · 2 médio · 3 alto
@@ -39,21 +51,35 @@ FocusScope {
 
     property var trophyList: []
     property int trophyIndex: 0
+    property int trophyFocus: 0               // 0 lista de jogos · 1 conquistas do jogo
+    property int achIndex: 0
     property var raIndex: null
     property string raState: "off"            // off · loading · ok · error
-    property var raCatalogs: ({})            // { consoleId: { título normalizado: total de troféus } }
+    property var raCatalogs: ({})            // { consoleId: { título normalizado: [troféus, id do jogo] } }
     property int raGot: 0
     property int raTotal: 0
+    property var achCache: ({})              // { id do jogo: { state, list, got, total, points, pointsGot } }
+
+    // página do jogo
+    property bool detailsOpen: false
+    property int detailsBtn: 0
+
+    // abrir jogo: "" · media (animação da vitrine) · flash · open (tela "Abrindo…")
+    property string launchPhase: ""
+    property var launchEntry: null
 
     // Fundo: tenta a imagem de fundo do jogo; se não existir, usa a capa.
     property bool bgUseArt: false
     onCurrentChanged: bgUseArt = false
 
+    readonly property var curShelf: shelves.length ? shelves[L.clampIndex(libShelf, shelves.length)] : null
     readonly property var current: {
         if (tab === 0) return recents.length ? recents[L.clampIndex(homeIndex, recents.length)] : null;
-        if (tab === 1) return libraryList.length ? libraryList[L.clampIndex(libIndex, libraryList.length)] : null;
+        if (tab === 1) return curShelf && curShelf.items.length ? curShelf.items[L.clampIndex(libCol, curShelf.items.length)] : null;
         return trophyList.length ? trophyList[L.clampIndex(trophyIndex, trophyList.length)].entry : null;
     }
+    readonly property var curTrophy: trophyList.length ? trophyList[L.clampIndex(trophyIndex, trophyList.length)] : null
+    readonly property var curAch: curTrophy ? achFor(curTrophy.gameId) : null
 
     // ------------------------------------------------- consoles e emuladores
     // Escolhas guardadas no api.memory; o arquivo do Pegasus é gerado a partir delas.
@@ -162,6 +188,7 @@ FocusScope {
     SoundEffect { id: sConfirm; source: "sounds/confirm.wav"; volume: 0.6 * root.soundGain }
     SoundEffect { id: sBack;    source: "sounds/back.wav";    volume: 0.6 * root.soundGain }
     SoundEffect { id: sLaunch;  source: "sounds/launch.wav";  volume: 0.75 * root.soundGain }
+    SoundEffect { id: sInsert;  source: "sounds/insert.wav";  volume: 0.8 * root.soundGain }
     SoundEffect { id: sNotice;  source: "sounds/notice.wav";  volume: 0.6 * root.soundGain }
     SoundEffect { id: sPadOn;   source: "sounds/pad-on.wav";  volume: 0.6 * root.soundGain }
     SoundEffect { id: sPadOff;  source: "sounds/pad-off.wav"; volume: 0.6 * root.soundGain }
@@ -200,12 +227,16 @@ FocusScope {
         s.play();
     }
     onHomeIndexChanged: sfx(sMove)
-    onLibIndexChanged: sfx(sMove)
-    onTrophyIndexChanged: sfx(sMove)
-    onFilterIndexChanged: sfx(sMove)
-    onLibOnFiltersChanged: sfx(sMove)
+    onLibColChanged: sfx(sMove)
+    onLibShelfChanged: sfx(sMove)
+    onTrophyIndexChanged: { sfx(sMove); achIndex = 0; trophyFocus = 0; achLoadLater.restart(); }
+    onAchIndexChanged: sfx(sMove)
+    onTrophyFocusChanged: sfx(sMove)
+    onLibOnSortChanged: sfx(sMove)
+    onDetailsBtnChanged: sfx(sMove)
     onAccountOpenChanged: { sfx(accountOpen ? sConfirm : sBack); bumpLayout(); }
     onSettingsOpenChanged: { sfx(settingsOpen ? sConfirm : sBack); bumpLayout(); }
+    onDetailsOpenChanged: { sfx(detailsOpen ? sConfirm : sBack); bumpLayout(); }
     onSortModeChanged: sfx(sTab)
     onGearFocusedChanged: sfx(sMove)
     Timer { id: unquiet; interval: 700; onTriggered: root.quiet = false }
@@ -243,6 +274,7 @@ FocusScope {
             mono: L.monogram(g.title),
             sys: sys,
             sysName: info.name,
+            short: info.short,
             color: info.color,
             art: art,
             bg: bg,
@@ -261,11 +293,24 @@ FocusScope {
         return -1;
     }
 
+    // posição de um jogo nas prateleiras: primeiro na prateleira preferida, depois em qualquer uma
+    function locateInShelves(key, shelfKey) {
+        var i, j;
+        for (i = 0; i < shelves.length; i++) {
+            if (shelfKey && shelves[i].key !== shelfKey) continue;
+            for (j = 0; j < shelves[i].items.length; j++)
+                if (shelves[i].items[j].key === key) return [i, j];
+        }
+        if (shelfKey) return locateInShelves(key, "");
+        return null;
+    }
+
     function refresh() {
         var wasQuiet = quiet;
         quiet = true;
         var keepHome = recents.length ? recents[L.clampIndex(homeIndex, recents.length)].key : api.memory.get("homeKey");
-        var keepLib = libraryList.length ? libraryList[L.clampIndex(libIndex, libraryList.length)].key : api.memory.get("libKey");
+        var keepLib = tabLibKey();
+        var keepShelf = curShelf ? curShelf.key : (api.memory.has("shelfKey") ? String(api.memory.get("shelfKey")) : "");
 
         var out = [];
         for (var i = 0; i < api.allGames.count; i++) {
@@ -281,38 +326,63 @@ FocusScope {
         homeIndex = hi >= 0 ? hi : 0;
         if (r.label === "Jogados recentemente") homeIndex = 0;   // o último jogado sempre volta para a frente
 
-        var keepFilter = filters.length > filterIndex ? filters[filterIndex].key
-                       : (api.memory.has("filterKey") ? String(api.memory.get("filterKey")) : "");
-        filters = L.libraryFilters(out);
-        filterIndex = L.indexOfFilter(filters, keepFilter);
-        libraryList = L.filterList(out, filters[filterIndex].key, sortMode);
-        var li = keepLib ? indexOfKey(libraryList, keepLib) : -1;
-        libIndex = li >= 0 ? li : 0;
+        shelves = L.buildShelves(out, sortMode);
+        placeLibrary(keepLib, keepShelf);
 
         rebuildTrophies();
         quiet = wasQuiet;
     }
-
-    function setFilter(i) {
-        filterIndex = L.clampIndex(i, filters.length);
-        libraryList = L.filterList(entries, filters[filterIndex].key, sortMode);
-        libIndex = 0;
-        api.memory.set("filterKey", filters[filterIndex].key);
+    function tabLibKey() {
+        if (curShelf && curShelf.items.length) return curShelf.items[L.clampIndex(libCol, curShelf.items.length)].key;
+        return api.memory.has("libKey") ? String(api.memory.get("libKey")) : "";
+    }
+    function placeLibrary(key, shelfKey) {
+        var pos = key ? locateInShelves(key, shelfKey) : null;
+        if (!pos) {
+            // o jogo saiu da prateleira: fica na mesma prateleira, se ela ainda existir
+            var si = 0;
+            for (var i = 0; i < shelves.length; i++) if (shelves[i].key === shelfKey) si = i;
+            pos = [si, shelves.length ? L.clampIndex(libCol, shelves[si].items.length) : 0];
+        }
+        libShelf = pos[0];
+        libCol = pos[1];
+        var c = Object.assign({}, shelfCols);
+        if (shelves.length) c[shelves[libShelf].key] = libCol;
+        shelfCols = c;
+    }
+    function colFor(i) {
+        var s = shelves[i];
+        if (!s) return 0;
+        var c = shelfCols[s.key];
+        return L.clampIndex(c === undefined ? 0 : c, s.items.length);
+    }
+    function moveShelf(d) {
+        var next = L.clampIndex(libShelf + d, shelves.length);
+        if (next === libShelf) return;
+        var c = Object.assign({}, shelfCols);
+        c[shelves[libShelf].key] = libCol;
+        shelfCols = c;
+        libCol = colFor(next);
+        libShelf = next;
     }
 
     function setSort(m) {
+        var key = tabLibKey();
+        var shelfKey = curShelf ? curShelf.key : "";
         sortMode = (m + 3) % 3;
-        libraryList = L.filterList(entries, filters[filterIndex].key, sortMode);
-        libIndex = 0;
         api.memory.set("sortMode", sortMode);
+        shelves = L.buildShelves(entries, sortMode);
+        shelfCols = ({});
+        placeLibrary(key, shelfKey);
     }
 
     // Triângulo: favoritar/desfavoritar o jogo selecionado (o Pegasus guarda os favoritos)
     function toggleFavorite() {
-        if (!current || tab === 2) return;
+        if (!current) return;
         var g = current.game;
         g.favorite = !g.favorite;
         sfx(g.favorite ? sConfirm : sBack);
+        toast(g.favorite ? "Adicionado aos favoritos" : "Removido dos favoritos");
         refresh();
     }
 
@@ -385,7 +455,7 @@ FocusScope {
         list.forEach(function (p) { names[p.name] = true; });
         if (padsReady) {
             Object.keys(names).forEach(function (n) {
-                if (!padNames[n]) { toast("Controle conectado: " + n); sfx(sPadOn); }
+                if (!padNames[n]) { toast("Controle conectado: " + L.padLabel(n)); sfx(sPadOn); }
             });
             Object.keys(padNames).forEach(function (n) {
                 if (!names[n]) { toast("Controle desconectado"); sfx(sPadOff); }
@@ -418,7 +488,9 @@ FocusScope {
     function bumpLayout() { stage.layoutTick++; }
     onTabChanged: bumpLayout()
     onNoticeOpenChanged: bumpLayout()
+    onLaunchPhaseChanged: bumpLayout()
 
+    // ------------------------------------------------------ RetroAchievements
     // Catálogo de troféus de cada console da biblioteca (guardado por 7 dias: a lista é grande)
     function loadCatalogs() {
         var ids = L.raConsolesIn(entries);
@@ -426,7 +498,7 @@ FocusScope {
         var pending = [];
         var now = Date.now();
         ids.forEach(function (id) {
-            var mem = "raCat" + id;
+            var mem = "raCat2_" + id;
             var cached = null;
             if (api.memory.has(mem)) {
                 try { cached = JSON.parse(String(api.memory.get(mem))); } catch (e) { cached = null; }
@@ -445,7 +517,8 @@ FocusScope {
                 if (xhr.status === 200) {
                     try {
                         var m = L.indexCatalog(JSON.parse(xhr.responseText));
-                        api.memory.set("raCat" + id, JSON.stringify({ t: Date.now(), m: m }));
+                        api.memory.set("raCat2_" + id, JSON.stringify({ t: Date.now(), m: m }));
+                        if (api.memory.has("raCat" + id)) api.memory.unset("raCat" + id);   // formato antigo
                         var c = Object.assign({}, root.raCatalogs);
                         c[id] = m;
                         root.raCatalogs = c;
@@ -464,13 +537,14 @@ FocusScope {
     }
 
     function rebuildTrophies() {
+        var keep = curTrophy ? curTrophy.entry.key : "";
         var list = [];
         var got = 0, total = 0;
         if (raIndex) {
             for (var i = 0; i < entries.length; i++) {
                 var t = L.trophiesFor(raIndex, entries[i], raCatalogs);
                 if (t) {
-                    list.push({ entry: entries[i], got: t.got, total: t.total, played: t.played });
+                    list.push({ entry: entries[i], got: t.got, total: t.total, played: t.played, gameId: t.gameId });
                     got += t.got;
                     total += t.total;
                 }
@@ -483,10 +557,15 @@ FocusScope {
                 return a.entry.display < b.entry.display ? -1 : 1;
             });
         }
+        var wasQuiet = quiet;
+        quiet = true;
         trophyList = list;
         raGot = got;
         raTotal = total;
-        trophyIndex = L.clampIndex(trophyIndex, list.length);
+        var ki = keep ? indexOfKey(list, keep) : -1;
+        trophyIndex = ki >= 0 ? ki : L.clampIndex(trophyIndex, list.length);
+        quiet = wasQuiet;
+        achLoadLater.restart();
     }
 
     // conta do RetroAchievements: digitada no próprio app (aba Troféus) ou, se vazio, a do config.js
@@ -496,6 +575,7 @@ FocusScope {
         api.memory.set("raUser", String(u).trim());
         api.memory.set("raKey", String(k).trim());
         accountOpen = false;
+        achCache = ({});
         root.forceActiveFocus();
         loadAchievements();
     }
@@ -529,6 +609,34 @@ FocusScope {
         xhr.send();
     }
 
+    // Conquistas de um jogo (com as datas do usuário); ficam guardadas enquanto o app está aberto
+    function achFor(id) { return id && achCache[id] ? achCache[id] : null; }
+    function setAch(id, v) { var c = Object.assign({}, achCache); c[id] = v; achCache = c; }
+    function loadGameAch(id) {
+        if (!id || raState !== "ok" || !raUser() || !raKey()) return;
+        var c = achCache[id];
+        if (c && (c.state === "loading" || c.state === "ok")) return;
+        setAch(id, { state: "loading", list: [], got: 0, total: 0, points: 0, pointsGot: 0 });
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== XMLHttpRequest.DONE) return;
+            if (xhr.status === 200) {
+                try {
+                    var r = L.parseGameAchievements(JSON.parse(xhr.responseText));
+                    r.state = "ok";
+                    root.setAch(id, r);
+                    return;
+                } catch (e) { console.warn("P7: conquistas " + id + ": " + e); }
+            }
+            root.setAch(id, { state: "error", list: [], got: 0, total: 0, points: 0, pointsGot: 0 });
+        };
+        xhr.open("GET", "https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php?g=" + id
+                 + "&u=" + encodeURIComponent(raUser()) + "&y=" + encodeURIComponent(raKey()));
+        xhr.send();
+    }
+    // espera a seta parar antes de buscar (andando rápido pela lista não dispara dezenas de pedidos)
+    Timer { id: achLoadLater; interval: 260; onTriggered: if (root.curTrophy) root.loadGameAch(root.curTrophy.gameId) }
+
     function trophyInfo(entry) {
         if (!entry) return { kind: "none", text: "" };
         if (!L.hasTrophySupport(entry.sys)) return { kind: "none", text: "Sem troféus neste console" };
@@ -537,31 +645,100 @@ FocusScope {
         if (raState === "error") return { kind: "none", text: "Sem conexão com o RetroAchievements" };
         var t = L.trophiesFor(raIndex, entry, raCatalogs);
         if (!t) return { kind: "none", text: "Sem troféus para este jogo" };
-        return { kind: "progress", got: t.got, total: t.total };
+        return { kind: "progress", got: t.got, total: t.total, gameId: t.gameId };
     }
 
-    function launchCurrent() {
+    // ---------------------------------------------------------- página do jogo
+    readonly property int detailsGameId: detailsOpen && current ? (trophyInfo(current).gameId || 0) : 0
+    readonly property var detailButtons: {
+        if (!current) return [];
+        var b = [ { id: "play", label: !current.emuOk ? "Como jogar" : (L.playedTime(current) > 0 ? "Continuar" : "Jogar") },
+                  { id: "fav", label: current.fav ? "Favorito" : "Favoritar", on: current.fav === true } ];
+        if (trophyInfo(current).kind === "progress") b.push({ id: "trophies", label: "Troféus" });
+        return b;
+    }
+    function openDetails() {
         if (!current) return;
+        detailsBtn = 0;
+        detailsOpen = true;
+        var id = trophyInfo(current).gameId;
+        if (id) loadGameAch(id);
+    }
+    function detailsActivate() {
+        var b = detailButtons[L.clampIndex(detailsBtn, detailButtons.length)];
+        if (!b) return;
+        if (b.id === "play") {
+            detailsOpen = false;
+            launchCurrent();
+        } else if (b.id === "fav") {
+            toggleFavorite();
+        } else if (b.id === "trophies") {
+            var key = current.key;
+            detailsOpen = false;
+            switchTab(2);
+            var i = indexOfKey(trophyList, key);
+            if (i >= 0) trophyIndex = i;
+            trophyFocus = 0;
+        }
+    }
+
+    // ---------------------------------------------------------- abrir o jogo
+    // Início: a mídia sai da caixa e entra na base, a tela clareia e aparece "Abrindo…".
+    // Outras telas: só o clarão e o "Abrindo…". X durante a animação pula para o jogo; Círculo cancela.
+    function launchCurrent() {
+        if (!current || launchPhase !== "") return;
         if (!current.emuOk) {
             showNotice("Falta o emulador", current.emuHint || ("Instale o " + current.emuName + " para jogar " + current.sysName + "."));
             return;
         }
         api.memory.set("tab", tab);
         api.memory.set("homeKey", current.key);
-        if (tab === 1) {
+        if (tab === 1 && curShelf) {
             api.memory.set("libKey", current.key);
-            api.memory.set("filterKey", filters[filterIndex].key);
+            api.memory.set("shelfKey", curShelf.key);
         }
+        launchEntry = current;
         sfx(sLaunch);
+        if (tab === 0 && showcase.visible && showcase.entry === current) {
+            launchPhase = "media";
+            showcase.launch();
+        } else {
+            startFlash();
+        }
+    }
+    function startFlash() {
+        if (launchPhase === "flash" || launchPhase === "open") return;
+        launchPhase = "flash";
+        flashAnim.restart();
+    }
+    function doLaunch() {
+        if (!launchEntry) return;
         launchGuardUntil = Date.now() + 2000;   // um X segurado não abre o jogo duas vezes
-        current.game.launch();
+        launchSafety.restart();
+        console.warn("P7: abrindo " + launchEntry.title);
+        launchEntry.game.launch();
+    }
+    function resetLaunch() {
+        flashAnim.stop();
+        flashLayer.opacity = 0;
+        launchSafety.stop();
+        showcase.resetLaunch();
+        launchPhase = "";
+    }
+    // se o emulador não abriu (o app continua na frente), volta ao menu
+    Timer {
+        id: launchSafety
+        interval: 9000
+        onTriggered: if (Qt.application.state === Qt.ApplicationActive) root.resetLaunch()
     }
 
     function switchTab(t) {
         var next = (t + 3) % 3;
         if (next !== tab) sfx(next === 0 && t !== 3 ? sBack : sTab);
         tab = next;
-        libOnFilters = false;
+        libOnSort = false;
+        gearFocused = false;
+        trophyFocus = 0;
     }
 
     Component.onCompleted: {
@@ -589,9 +766,11 @@ FocusScope {
             if (Qt.application.state === Qt.ApplicationActive) {
                 // volta do jogo (ou de outro app): o controle precisa encontrar o foco aqui
                 releaseAllKeys();
+                if (root.launchPhase !== "") root.resetLaunch();
                 if (!root.accountOpen) root.forceActiveFocus();
                 if (!consoles.open) syncLibrary();
                 refresh();
+                achCache = ({});
                 loadAchievements();
             }
         }
@@ -631,6 +810,15 @@ FocusScope {
             }
             heldKeys[event.key] = now;
         }
+        // abrindo o jogo: X pula a animação, Círculo cancela, o resto espera
+        if (launchPhase !== "") {
+            event.accepted = true;
+            if (launchPhase === "media") {
+                if (api.keys.isAccept(event)) startFlash();
+                else if (api.keys.isCancel(event)) { resetLaunch(); sfx(sBack); }
+            }
+            return;
+        }
         if (noticeOpen) {
             if (api.keys.isAccept(event) || api.keys.isCancel(event)) { noticeOpen = false; sfx(sBack); }
             event.accepted = true;
@@ -649,10 +837,12 @@ FocusScope {
             if (api.keys.isCancel(event)) { event.accepted = true; accountOpen = false; root.forceActiveFocus(); }
             return;
         }
+        if (detailsOpen) { handleDetailsKey(event); return; }
         if (api.keys.isPrevPage(event)) { event.accepted = true; switchTab(tab - 1); return; }
         if (api.keys.isNextPage(event)) { event.accepted = true; switchTab(tab + 1); return; }
 
-        if (api.keys.isFilters(event)) { event.accepted = true; toggleFavorite(); return; }
+        if (api.keys.isFilters(event)) { event.accepted = true; if (!gearFocused && !libOnSort) toggleFavorite(); return; }
+        if (api.keys.isDetails(event)) { event.accepted = true; if (!gearFocused && !libOnSort) openDetails(); return; }
 
         if (tab === 0) {
             if (gearFocused) {
@@ -675,36 +865,64 @@ FocusScope {
             return;
         }
 
-        if (api.keys.isCancel(event)) { event.accepted = true; switchTab(0); return; }
-
         if (tab === 1) {
-            if (api.keys.isDetails(event)) { event.accepted = true; setSort(sortMode + 1); return; }
-            var cols = libraryGrid.columns;
-            if (libOnFilters) {
-                if (event.key === Qt.Key_Left)  { event.accepted = true; setFilter(filterIndex - 1); }
-                else if (event.key === Qt.Key_Right) { event.accepted = true; setFilter(filterIndex + 1); }
-                else if (event.key === Qt.Key_Down || api.keys.isAccept(event)) { event.accepted = true; libOnFilters = false; }
+            if (libOnSort) {
+                if (event.key === Qt.Key_Left)  { event.accepted = true; setSort(sortMode - 1); }
+                else if (event.key === Qt.Key_Right) { event.accepted = true; setSort(sortMode + 1); }
+                else if (event.key === Qt.Key_Down || api.keys.isAccept(event) || api.keys.isCancel(event)) { event.accepted = true; libOnSort = false; }
                 else if (event.key === Qt.Key_Up) { event.accepted = true; }
                 return;
             }
-            if (event.key === Qt.Key_Left)  { event.accepted = true; libIndex = L.clampIndex(libIndex - 1, libraryList.length); }
-            else if (event.key === Qt.Key_Right) { event.accepted = true; libIndex = L.clampIndex(libIndex + 1, libraryList.length); }
-            else if (event.key === Qt.Key_Down)  { event.accepted = true; libIndex = L.clampIndex(libIndex + cols, libraryList.length); }
+            if (api.keys.isCancel(event)) { event.accepted = true; switchTab(0); return; }
+            var n = curShelf ? curShelf.items.length : 0;
+            if (event.key === Qt.Key_Left)  { event.accepted = true; libCol = L.clampIndex(libCol - 1, n); }
+            else if (event.key === Qt.Key_Right) { event.accepted = true; libCol = L.clampIndex(libCol + 1, n); }
+            else if (event.key === Qt.Key_Down)  { event.accepted = true; moveShelf(1); }
             else if (event.key === Qt.Key_Up) {
                 event.accepted = true;
-                if (libIndex < cols) libOnFilters = true;
-                else libIndex = libIndex - cols;
+                if (libShelf === 0) libOnSort = true;
+                else moveShelf(-1);
             }
             else if (api.keys.isAccept(event)) { event.accepted = true; launchCurrent(); }
             return;
         }
 
         if (tab === 2) {
+            if (trophyFocus === 1) {
+                var list = curAch && curAch.state === "ok" ? curAch.list : [];
+                var cols = achGrid.columns;
+                if (api.keys.isCancel(event)) { event.accepted = true; trophyFocus = 0; return; }
+                if (event.key === Qt.Key_Left) {
+                    event.accepted = true;
+                    if (achIndex % cols === 0) trophyFocus = 0;
+                    else achIndex = achIndex - 1;
+                }
+                else if (event.key === Qt.Key_Right) { event.accepted = true; if (achIndex % cols < cols - 1) achIndex = L.clampIndex(achIndex + 1, list.length); }
+                else if (event.key === Qt.Key_Down)  { event.accepted = true; if (achIndex + cols < list.length) achIndex += cols; }
+                else if (event.key === Qt.Key_Up)    { event.accepted = true; if (achIndex - cols >= 0) achIndex -= cols; }
+                else if (api.keys.isAccept(event)) { event.accepted = true; }
+                return;
+            }
+            if (api.keys.isCancel(event)) { event.accepted = true; switchTab(0); return; }
             if (event.key === Qt.Key_Up)   { event.accepted = true; trophyIndex = L.clampIndex(trophyIndex - 1, trophyList.length); }
             else if (event.key === Qt.Key_Down) { event.accepted = true; trophyIndex = L.clampIndex(trophyIndex + 1, trophyList.length); }
-            else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) { event.accepted = true; }
+            else if (event.key === Qt.Key_Right) {
+                event.accepted = true;
+                if (curAch && curAch.state === "ok" && curAch.list.length > 0) { achIndex = 0; trophyFocus = 1; }
+            }
+            else if (event.key === Qt.Key_Left) { event.accepted = true; }
             else if (api.keys.isAccept(event)) { event.accepted = true; launchCurrent(); }
         }
+    }
+
+    function handleDetailsKey(event) {
+        event.accepted = true;
+        var n = detailButtons.length;
+        if (api.keys.isCancel(event) || api.keys.isDetails(event)) { detailsOpen = false; return; }
+        if (api.keys.isFilters(event)) { toggleFavorite(); return; }
+        if (event.key === Qt.Key_Left)  { detailsBtn = L.clampIndex(detailsBtn - 1, n); return; }
+        if (event.key === Qt.Key_Right) { detailsBtn = L.clampIndex(detailsBtn + 1, n); return; }
+        if (api.keys.isAccept(event)) { detailsActivate(); return; }
     }
 
     property int settingsIndex: 0
@@ -739,7 +957,7 @@ FocusScope {
     // ============================================================== TELA
     Rectangle {
         anchors.fill: parent
-        color: "#07080a"
+        color: "#05040b"
     }
 
     Item {
@@ -753,70 +971,112 @@ FocusScope {
         transformOrigin: Item.TopLeft
 
         // ---------------------------------------------------- fundo
+        // A imagem do jogo, desfocada de leve, troca com uma transição cruzada (duas camadas).
         Item {
             id: backdrop
             anchors.fill: parent
 
             readonly property color tint: root.current ? root.current.color : "#2a2d33"
+            readonly property string want: root.current ? (root.bgUseArt ? root.current.art : root.current.bg) : ""
+            property int front: 0
+            onWantChanged: load()
+            Component.onCompleted: load()
+            function load() {
+                var img = front === 0 ? bgB : bgA;
+                if ((front === 0 ? bgA : bgB).source == want && want !== "") return;
+                img.source = want;
+                if (want === "") { bgA.shown = false; bgB.shown = false; return; }
+                // a mesma imagem já carregada (voltou para um jogo de antes): mostra na hora
+                if (img.status === Image.Ready) ready(img);
+            }
+            function ready(img) {
+                if (String(img.source) !== String(want)) return;
+                front = img === bgA ? 0 : 1;
+                bgA.shown = img === bgA;
+                bgB.shown = img === bgB;
+            }
 
             Rectangle {
                 anchors.fill: parent
-                color: Qt.darker(backdrop.tint, 4.2)
-                Behavior on color { ColorAnimation { duration: 500 } }
+                color: Qt.darker(backdrop.tint, 4.6)
+                Behavior on color { ColorAnimation { duration: 700 } }
             }
 
-            RadialGradient {
+            Item {
+                id: bgPair
                 anchors.fill: parent
-                horizontalOffset: width * 0.24
-                verticalOffset: -height * 0.22
-                horizontalRadius: width * 0.7
-                verticalRadius: height * 0.8
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: Qt.rgba(backdrop.tint.r, backdrop.tint.g, backdrop.tint.b, 0.55) }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
-            }
-
-            // A arte é desfocada uma única vez por troca de jogo; os painéis por cima são só translúcidos.
-            Image {
-                id: bgImage
-                anchors.fill: parent
-                source: root.current ? (root.bgUseArt ? root.current.art : root.current.bg) : ""
-                fillMode: Image.PreserveAspectCrop
-                asynchronous: true
-                cache: true
-                sourceSize.width: 480
                 visible: false
-                onStatusChanged: {
-                    if (status === Image.Error && !root.bgUseArt) root.bgUseArt = true;
+                Image {
+                    id: bgA
+                    property bool shown: false
+                    anchors.fill: parent
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: true
+                    sourceSize.width: 720
+                    opacity: shown && status === Image.Ready ? 1 : 0
+                    scale: shown ? 1.0 : 1.06
+                    Behavior on opacity { NumberAnimation { duration: 900; easing.type: Easing.InOutQuad } }
+                    Behavior on scale { NumberAnimation { duration: 1400; easing.type: Easing.OutCubic } }
+                    onStatusChanged: {
+                        if (status === Image.Ready) backdrop.ready(bgA);
+                        else if (status === Image.Error && String(source) === String(backdrop.want) && !root.bgUseArt) root.bgUseArt = true;
+                    }
+                }
+                Image {
+                    id: bgB
+                    property bool shown: false
+                    anchors.fill: parent
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: true
+                    sourceSize.width: 720
+                    opacity: shown && status === Image.Ready ? 1 : 0
+                    scale: shown ? 1.0 : 1.06
+                    Behavior on opacity { NumberAnimation { duration: 900; easing.type: Easing.InOutQuad } }
+                    Behavior on scale { NumberAnimation { duration: 1400; easing.type: Easing.OutCubic } }
+                    onStatusChanged: {
+                        if (status === Image.Ready) backdrop.ready(bgB);
+                        else if (status === Image.Error && String(source) === String(backdrop.want) && !root.bgUseArt) root.bgUseArt = true;
+                    }
                 }
             }
             FastBlur {
                 anchors.fill: parent
-                source: bgImage
-                radius: 48
-                opacity: bgImage.status === Image.Ready ? 0.55 : 0
-                Behavior on opacity { NumberAnimation { duration: 450 } }
+                source: bgPair
+                radius: 26
+                opacity: 0.62
             }
 
+            // cor do console por cima, mais forte no alto à direita (atrás da vitrine)
             RadialGradient {
                 anchors.fill: parent
+                horizontalOffset: width * 0.22
+                verticalOffset: -height * 0.2
                 horizontalRadius: width * 0.75
-                verticalRadius: height * 0.75
+                verticalRadius: height * 0.85
                 gradient: Gradient {
-                    GradientStop { position: 0.55; color: "transparent" }
-                    GradientStop { position: 1.0; color: "#99050608" }
+                    GradientStop { position: 0.0; color: Qt.rgba(backdrop.tint.r, backdrop.tint.g, backdrop.tint.b, 0.42) }
+                    GradientStop { position: 1.0; color: "transparent" }
+                }
+            }
+            // escurece embaixo e à esquerda, onde ficam os textos e as capas
+            LinearGradient {
+                anchors.fill: parent
+                start: Qt.point(0, 0)
+                end: Qt.point(width * 0.6, 0)
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: "#8c05040b" }
+                    GradientStop { position: 1.0; color: "#0005040b" }
                 }
             }
             Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: parent.height * 0.56
+                anchors.fill: parent
                 gradient: Gradient {
-                    GradientStop { position: 0.0; color: "transparent" }
-                    GradientStop { position: 0.55; color: "#8c050608" }
-                    GradientStop { position: 1.0; color: "#e0050608" }
+                    GradientStop { position: 0.0; color: "#2605040b" }
+                    GradientStop { position: 0.4; color: "#0005040b" }
+                    GradientStop { position: 0.78; color: "#bf05040b" }
+                    GradientStop { position: 1.0; color: "#f205040b" }
                 }
             }
         }
@@ -847,12 +1107,13 @@ FocusScope {
             id: tabBar
             x: 56
             y: 32
-            height: 46
+            height: 52
             width: tabRow.width + 8
             radius: height / 2
 
             LiquidPill {
                 x: tabRow.x + (target ? target.x : 0)
+                light: true
                 target: tabRepeater.added >= 0 && tabRepeater.count > root.tab ? tabRepeater.itemAt(root.tab) : null
             }
 
@@ -867,36 +1128,26 @@ FocusScope {
                     onItemAdded: added++
                     model: root.tabNames
                     delegate: Item {
-                        width: tabLabel.implicitWidth + 40
-                        height: 38
+                        width: tabLabel.implicitWidth + 44
+                        height: 44
 
                         Text {
                             id: tabLabel
                             anchors.centerIn: parent
                             text: modelData
-                            color: index === root.tab ? "#ffffff" : "#9effffff"
-                            font.family: "Roboto"
-                            font.pixelSize: 15
-                            font.weight: index === root.tab ? Font.Medium : Font.Normal
+                            color: index === root.tab ? "#0b0a14" : "#a6ffffff"
+                            font.family: "Manrope"
+                            font.pixelSize: 17
+                            font.weight: index === root.tab ? Font.Bold : Font.Medium
+                            Behavior on color { ColorAnimation { duration: 180 } }
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: root.switchTab(index)
+                            onClicked: if (root.launchPhase === "" && !root.detailsOpen) root.switchTab(index)
                         }
                     }
                 }
             }
-        }
-
-        Text {
-            anchors.left: tabBar.right
-            anchors.leftMargin: 16
-            anchors.verticalCenter: tabBar.verticalCenter
-            text: "L1  ·  R1"
-            color: "#59ffffff"
-            font.family: "Roboto"
-            font.pixelSize: 14
-            font.letterSpacing: 1
         }
 
         Row {
@@ -905,100 +1156,91 @@ FocusScope {
             anchors.verticalCenter: tabBar.verticalCenter
             spacing: 18
 
-            // controles conectados e bateria (só o que o Android informa)
-            Row {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 16
-                visible: root.pads.length > 0
-                Repeater {
-                    model: root.pads.slice(0, 2)
-                    delegate: Row {
-                        spacing: 7
-                        readonly property bool low: modelData.hasBattery && modelData.level <= 15 && !modelData.charging
+            // controles conectados: anel com a bateria (só o que o Android informa)
+            Repeater {
+                model: root.pads.slice(0, 2)
+                delegate: Glass {
+                    backdrop: glassSource
+                    stageItem: stage
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: padText.width + 74
+                    height: 56
+                    radius: 28
+                    readonly property bool hasLevel: modelData.hasBattery && modelData.level >= 0
+                    Ring {
+                        x: 6; anchors.verticalCenter: parent.verticalCenter
+                        width: 44; height: 44
+                        lineWidth: 3
+                        pixelRatio: root.pixelRatio
+                        value: hasLevel ? modelData.level / 100 : 1
+                        color: hasLevel ? L.batteryColor(modelData.level, modelData.charging) : "#59ffffff"
+                        track: "#26ffffff"
                         Canvas {
-                            width: 28; height: 18
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.centerIn: parent
+                            width: 22 * 3; height: 16 * 3
+                            scale: 1 / 3
+                            renderTarget: Canvas.Image
                             onPaint: {
                                 var c = getContext("2d");
                                 c.reset();
-                                c.strokeStyle = "rgba(255,255,255,0.8)";
-                                c.lineWidth = 1.6;
+                                c.scale(3, 3);
+                                c.strokeStyle = "#ffffff";
+                                c.lineWidth = 1.5;
+                                c.lineJoin = "round";
                                 c.beginPath();
-                                c.moveTo(7, 2); c.lineTo(21, 2);
-                                c.bezierCurveTo(27, 2, 28, 14, 25, 16);
-                                c.bezierCurveTo(22, 18, 19, 12, 17, 11);
-                                c.lineTo(11, 11);
-                                c.bezierCurveTo(9, 12, 6, 18, 3, 16);
-                                c.bezierCurveTo(0, 14, 1, 2, 7, 2);
+                                c.moveTo(6, 2); c.lineTo(16, 2);
+                                c.bezierCurveTo(20, 2, 21.5, 11, 19.5, 13.5);
+                                c.bezierCurveTo(18, 15, 16, 12, 14.5, 10.5);
+                                c.lineTo(7.5, 10.5);
+                                c.bezierCurveTo(6, 12, 4, 15, 2.5, 13.5);
+                                c.bezierCurveTo(0.5, 11, 2, 2, 6, 2);
                                 c.closePath();
                                 c.stroke();
                             }
                         }
-                        Item {
-                            visible: modelData.hasBattery
-                            width: 26; height: 13
-                            anchors.verticalCenter: parent.verticalCenter
-                            Rectangle {
-                                width: 23; height: 13; radius: 3
-                                color: "transparent"
-                                border.width: 1.4
-                                border.color: low ? "#ffb74d" : "#b3ffffff"
-                                Rectangle {
-                                    x: 2; y: 2
-                                    height: parent.height - 4
-                                    width: Math.max(1.5, (parent.width - 4) * Math.max(0, Math.min(100, modelData.level)) / 100)
-                                    radius: 1.5
-                                    color: low ? "#ffb74d" : (modelData.charging ? "#9be7a0" : "#e6ffffff")
-                                }
-                            }
-                            Rectangle { x: 23.5; y: 4; width: 2.2; height: 5; radius: 1; color: "#b3ffffff" }
-                        }
+                    }
+                    Column {
+                        id: padText
+                        x: 60
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 1
+                        Text { text: "Controle " + (index + 1); color: "#ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 14 }
                         Text {
-                            visible: modelData.hasBattery
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData.level + "%" + (modelData.charging ? "  carregando" : "")
-                            color: low ? "#ffb74d" : "#b3ffffff"
-                            font.family: "Roboto"
-                            font.pixelSize: 15
+                            text: (hasLevel ? modelData.level + "%" + (modelData.charging ? " · carregando" : "") + " · " : "") + L.padLabel(modelData.name)
+                            color: hasLevel && modelData.level <= 15 && !modelData.charging ? "#ff9c8f" : "#a6ffffff"
+                            font.family: "Manrope"; font.weight: Font.Medium; font.pixelSize: 13
                         }
                     }
                 }
             }
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "P7  STATION"
-                color: "#59ffffff"
-                font.family: "Roboto"
-                font.pixelSize: 12
-                font.weight: Font.DemiBold
-                font.letterSpacing: 3
-            }
-            Rectangle { width: 1; height: 14; color: "#33ffffff"; anchors.verticalCenter: parent.verticalCenter }
             Text {
                 id: clock
                 anchors.verticalCenter: parent.verticalCenter
-                color: "#b3ffffff"
-                font.family: "Roboto"
-                font.pixelSize: 18
-                font.letterSpacing: 0.5
+                color: "#e6ffffff"
+                font.family: "Sora"
+                font.pixelSize: 22
             }
             Glass {
                 backdrop: glassSource
                 stageItem: stage
-                width: 46
-                height: 46
-                radius: 23
-                border.width: root.gearFocused ? 2 : (liquid ? 0 : 1)
+                width: 54
+                height: 54
+                radius: 27
+                border.width: root.gearFocused ? 3 : (liquid ? 0 : 1)
                 border.color: root.gearFocused ? "#ffffff" : "#1cffffff"
                 anchors.verticalCenter: parent.verticalCenter
+                scale: root.gearFocused ? 1.08 : 1
+                Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                 Canvas {
                     anchors.centerIn: parent
-                    width: 22; height: 22
+                    width: 66; height: 66
+                    scale: 1 / 3
+                    renderTarget: Canvas.Image
                     onPaint: {
                         var ctx = getContext("2d");
                         ctx.reset();
-                        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+                        ctx.scale(3, 3);
+                        ctx.strokeStyle = "rgba(255,255,255,0.92)";
                         ctx.lineWidth = 1.7;
                         ctx.lineJoin = "round";
                         ctx.beginPath();
@@ -1016,21 +1258,15 @@ FocusScope {
                     }
                 }
                 // anel que enche enquanto o botão (ou o dedo) segura
-                Canvas {
-                    id: holdRing
+                Ring {
                     anchors.fill: parent
                     visible: root.holdProgress > 0
-                    property real p: root.holdProgress
-                    onPChanged: requestPaint()
-                    onPaint: {
-                        var ctx = getContext("2d");
-                        ctx.reset();
-                        ctx.strokeStyle = "rgba(255,255,255,0.95)";
-                        ctx.lineWidth = 3;
-                        ctx.beginPath();
-                        ctx.arc(width / 2, height / 2, width / 2 - 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p);
-                        ctx.stroke();
-                    }
+                    animated: false
+                    lineWidth: 3
+                    color: "#ffffff"
+                    track: "#00ffffff"
+                    pixelRatio: root.pixelRatio
+                    value: root.holdProgress
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -1046,78 +1282,265 @@ FocusScope {
         Item {
             id: homeView
             anchors.fill: parent
-            visible: root.tab === 0
-            opacity: visible ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 220 } }
+            visible: opacity > 0
+            opacity: root.tab === 0 ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 240 } }
 
-            Text {
-                x: 56
-                y: 112
-                text: root.recentsLabel.toUpperCase()
-                color: "#80ffffff"
-                font.family: "Roboto"
-                font.pixelSize: 12
-                font.weight: Font.Medium
-                font.letterSpacing: 1.8
-            }
+            readonly property var tinfo: root.tab === 0 ? root.trophyInfo(root.current) : ({ kind: "none" })
+            readonly property real rowTop: stage.height - 322
 
-            ListView {
-                id: recentRow
-                x: 56
-                y: 142
-                width: parent.width - 56
-                height: 240
-                orientation: ListView.Horizontal
-                spacing: 16
-                model: root.recents
-                currentIndex: root.homeIndex
-                highlightMoveDuration: 260
-                highlightRangeMode: ListView.ApplyRange
-                preferredHighlightBegin: 0
-                preferredHighlightEnd: width * 0.55
-                boundsBehavior: Flickable.StopAtBounds
-                cacheBuffer: 600
+            // ---------------- o jogo em destaque (esquerda)
+            Column {
+                id: heroInfo
+                x: 64
+                y: 178 + Math.max(0, stage.height - 960) * 0.4
+                width: 640
+                spacing: 18
+                visible: root.current !== null
+                opacity: root.launchPhase === "" ? 1 : 0.0
+                Behavior on opacity { NumberAnimation { duration: 300 } }
 
-                delegate: Item {
-                    width: tileItem.width
-                    height: 240
+                // troca de jogo: o texto entra deslizando
+                property real enter: 1
+                Connections {
+                    target: root
+                    function onCurrentChanged() { if (root.tab === 0) heroEnter.restart(); }
+                }
+                NumberAnimation { id: heroEnter; target: heroInfo; property: "enter"; from: 0; to: 1; duration: 420; easing.type: Easing.OutCubic }
+                transform: Translate { x: (1 - heroInfo.enter) * -24 }
 
-                    GameTile {
-                        id: tileItem
-                        entry: modelData
-                        selected: index === root.homeIndex
-                        pixelRatio: root.pixelRatio
-                        onTapped: {
-                            if (index === root.homeIndex) root.launchCurrent();
-                            else root.homeIndex = index;
-                        }
+                Row {
+                    spacing: 12
+                    opacity: heroInfo.enter
+                    Text {
+                        text: root.current ? (root.current.sysName + (root.current.emuFull ? "  ·  " + root.current.emuFull : "")).toUpperCase() : ""
+                        color: "#b3ffffff"
+                        font.family: "Manrope"
+                        font.weight: Font.Bold
+                        font.pixelSize: 14
+                        font.letterSpacing: 2.4
+                    }
+                }
+                Text {
+                    width: parent.width
+                    opacity: heroInfo.enter
+                    text: root.current ? root.current.display : ""
+                    color: "#ffffff"
+                    font.family: "Sora"
+                    font.weight: Font.Light
+                    // nomes longos ficam menores, sempre em até duas linhas
+                    font.pixelSize: text.length > 34 ? 54 : (text.length > 22 ? 64 : 76)
+                    font.letterSpacing: font.pixelSize > 60 ? -2 : -1.4
+                    lineHeight: 1.0
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+                Row {
+                    spacing: 28
+                    opacity: heroInfo.enter
+                    Text {
+                        text: root.current ? (root.current.playTime > 0 ? L.formatPlayTime(root.current.playTime) + " jogadas" : "Ainda não jogado") : ""
+                        color: "#c7ffffff"; font.family: "Manrope"; font.weight: Font.Medium; font.pixelSize: 17
                     }
                     Text {
-                        anchors.top: tileItem.bottom
-                        anchors.topMargin: 14
-                        width: 320
-                        text: modelData.display
-                        visible: index === root.homeIndex
-                        color: "#ebffffff"
-                        font.family: "Roboto"
-                        font.pixelSize: 14
-                        font.weight: Font.Medium
-                        elide: Text.ElideRight
+                        visible: root.current !== null && L.playedTime(root.current) > 0
+                        text: root.current ? "Último: " + L.shortLastPlayed(root.current.lastPlayed) : ""
+                        color: "#c7ffffff"; font.family: "Manrope"; font.weight: Font.Medium; font.pixelSize: 17
+                    }
+                }
+                Text {
+                    visible: root.current !== null && !root.current.emuOk
+                    text: root.current ? "Falta instalar o " + root.current.emuName + " neste tablet" : ""
+                    color: "#ffcc80"
+                    font.family: "Manrope"
+                    font.weight: Font.Medium
+                    font.pixelSize: 17
+                }
+                Item { width: 1; height: 4 }
+                Row {
+                    spacing: 14
+                    // Jogar / Continuar
+                    Rectangle {
+                        id: heroPlay
+                        width: heroPlayRow.implicitWidth + 62
+                        height: 62
+                        radius: 31
+                        color: "#ffffff"
+                        RectangularGlow {
+                            anchors.fill: parent
+                            z: -1
+                            glowRadius: 18
+                            spread: 0.05
+                            cornerRadius: 31 + glowRadius
+                            color: "#2effffff"
+                        }
+                        Row {
+                            id: heroPlayRow
+                            anchors.centerIn: parent
+                            spacing: 12
+                            Item {
+                                width: 18; height: 20
+                                anchors.verticalCenter: parent.verticalCenter
+                                Canvas {
+                                    anchors.centerIn: parent
+                                    width: 54; height: 60
+                                    scale: 1 / 3
+                                    renderTarget: Canvas.Image
+                                    onPaint: {
+                                        var c = getContext("2d");
+                                        c.reset();
+                                        c.scale(3, 3);
+                                        c.fillStyle = "#0b0a14";
+                                        c.beginPath(); c.moveTo(2, 1.5); c.lineTo(16, 10); c.lineTo(2, 18.5); c.closePath(); c.fill();
+                                    }
+                                }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.current && !root.current.emuOk ? "Como jogar"
+                                    : (root.current && L.playedTime(root.current) > 0 ? "Continuar" : "Jogar")
+                                color: "#0b0a14"
+                                font.family: "Manrope"
+                                font.pixelSize: 20
+                                font.weight: Font.Bold
+                            }
+                        }
+                        MouseArea { anchors.fill: parent; onClicked: root.launchCurrent() }
+                    }
+                    // troféus do jogo
+                    Glass {
+                        backdrop: glassSource
+                        stageItem: stage
+                        visible: homeView.tinfo.kind === "progress"
+                        width: trophyChipRow.implicitWidth + 50
+                        height: 62
+                        radius: 31
+                        Row {
+                            id: trophyChipRow
+                            anchors.centerIn: parent
+                            spacing: 14
+                            Item {
+                                width: 22; height: 22
+                                anchors.verticalCenter: parent.verticalCenter
+                                Canvas {
+                                    width: 66; height: 66
+                                    scale: 1 / 3
+                                    anchors.centerIn: parent
+                                    renderTarget: Canvas.Image
+                                    onPaint: {
+                                        var c = getContext("2d");
+                                        c.reset();
+                                        c.scale(3, 3);
+                                        c.strokeStyle = "#ffd36a";
+                                        c.lineWidth = 1.8;
+                                        c.lineJoin = "round";
+                                        c.beginPath();
+                                        c.moveTo(6, 3); c.lineTo(16, 3); c.lineTo(16, 8);
+                                        c.bezierCurveTo(16, 11, 14, 13, 11, 13);
+                                        c.bezierCurveTo(8, 13, 6, 11, 6, 8); c.closePath();
+                                        c.moveTo(11, 13); c.lineTo(11, 16);
+                                        c.moveTo(7, 19.5); c.lineTo(15, 19.5);
+                                        c.moveTo(6, 5); c.lineTo(3, 5); c.bezierCurveTo(3, 8, 4.5, 9.5, 6.5, 9.5);
+                                        c.moveTo(16, 5); c.lineTo(19, 5); c.bezierCurveTo(19, 8, 17.5, 9.5, 15.5, 9.5);
+                                        c.stroke();
+                                    }
+                                }
+                            }
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 7
+                                Text {
+                                    text: homeView.tinfo.kind === "progress" ? homeView.tinfo.got + " de " + homeView.tinfo.total + " troféus" : ""
+                                    color: "#ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 16
+                                }
+                                Rectangle {
+                                    width: 150; height: 4; radius: 2
+                                    color: "#2effffff"
+                                    Rectangle {
+                                        height: 4; radius: 2
+                                        color: "#ffd36a"
+                                        width: homeView.tinfo.kind === "progress" && homeView.tinfo.total > 0 ? parent.width * homeView.tinfo.got / homeView.tinfo.total : 0
+                                        Behavior on width { NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+                                    }
+                                }
+                            }
+                        }
+                        MouseArea { anchors.fill: parent; onClicked: root.openDetails() }
                     }
                 }
             }
 
+            // ---------------- vitrine 3D (centro-direita)
             Showcase {
-                x: 760
-                y: 250
-                width: 620
-                height: 430
-                entry: root.current
-                visible: root.current !== null
-                active: !root.settingsOpen && !root.accountOpen && !consoles.open
+                id: showcase
+                x: 736
+                y: 104
+                width: stage.width - 736 - 40
+                height: homeView.rowTop - 104 - 8
+                entry: root.tab === 0 ? root.current : null
+                pixelRatio: root.pixelRatio
+                visible: root.tab === 0 && root.current !== null
+                active: !root.settingsOpen && !root.accountOpen && !consoles.open && !root.detailsOpen
                         && Qt.application.state === Qt.ApplicationActive
+                onInserted: root.sfx(sInsert)
+                onLaunchFinished: if (root.launchPhase === "media") root.startFlash()
             }
 
+            // ---------------- fileira de jogos (embaixo)
+            Text {
+                x: 64
+                y: homeView.rowTop
+                visible: root.recents.length > 0
+                text: root.recentsLabel.toUpperCase()
+                color: "#99ffffff"
+                font.family: "Manrope"
+                font.weight: Font.Bold
+                font.pixelSize: 13
+                font.letterSpacing: 2.2
+            }
+            ListView {
+                id: recentRow
+                x: 64
+                y: homeView.rowTop + 22
+                width: stage.width - 64
+                height: 250
+                orientation: ListView.Horizontal
+                spacing: 24
+                model: root.recents
+                currentIndex: root.homeIndex
+                highlightMoveDuration: 420
+                highlightRangeMode: ListView.ApplyRange
+                preferredHighlightBegin: 2 * 192
+                preferredHighlightEnd: 2 * 192 + 168
+                boundsBehavior: Flickable.StopAtBounds
+                cacheBuffer: 800
+                interactive: root.launchPhase === ""
+                opacity: root.launchPhase === "" ? 1 : 0.35
+                Behavior on opacity { NumberAnimation { duration: 300 } }
+
+                delegate: Item {
+                    width: 168
+                    height: 250
+                    GameTile {
+                        y: 40
+                        entry: modelData
+                        baseSize: 168
+                        selScale: 1.14
+                        lift: 20
+                        selected: index === root.homeIndex && !root.gearFocused
+                        pixelRatio: root.pixelRatio
+                        onTapped: {
+                            root.gearFocused = false;
+                            if (index === root.homeIndex) root.launchCurrent();
+                            else root.homeIndex = index;
+                        }
+                        onHeld: { root.homeIndex = index; root.openDetails(); }
+                    }
+                }
+            }
+
+            // ---------------- boas-vindas (sem jogos)
             Glass {
                 backdrop: glassSource
                 stageItem: stage
@@ -1134,11 +1557,11 @@ FocusScope {
                     width: parent.width - 88
                     spacing: 18
 
-                    Text { text: "Bem-vindo ao P7 Station"; color: "#ffffff"; font.family: "Roboto"; font.weight: Font.Light; font.pixelSize: 40; font.letterSpacing: -0.8 }
+                    Text { text: "Bem-vindo ao P7 Station"; color: "#ffffff"; font.family: "Sora"; font.weight: Font.Light; font.pixelSize: 40; font.letterSpacing: -0.8 }
                     Text {
                         width: parent.width
                         wrapMode: Text.WordWrap
-                        color: "#c7ffffff"; font.family: "Roboto"; font.pixelSize: 17; lineHeight: 1.35
+                        color: "#c7ffffff"; font.family: "Manrope"; font.pixelSize: 17; lineHeight: 1.35
                         text: "O P7 Station procura sozinho as pastas de jogos que você já tem (ROMs, Jogos, Emulation...). Para começar:"
                     }
                     Repeater {
@@ -1154,14 +1577,14 @@ FocusScope {
                             Rectangle {
                                 width: 30; height: 30; radius: 15
                                 color: "#1fffffff"; border.width: 1; border.color: "#33ffffff"
-                                Text { anchors.centerIn: parent; text: index + 1; color: "#ffffff"; font.family: "Roboto"; font.pixelSize: 14; font.weight: Font.Medium }
+                                Text { anchors.centerIn: parent; text: index + 1; color: "#ffffff"; font.family: "Manrope"; font.pixelSize: 14; font.weight: Font.Bold }
                             }
                             Text {
                                 width: parent.width - 46
                                 anchors.verticalCenter: parent.verticalCenter
                                 wrapMode: Text.WordWrap
                                 text: modelData
-                                color: "#e6ffffff"; font.family: "Roboto"; font.pixelSize: 16; lineHeight: 1.3
+                                color: "#e6ffffff"; font.family: "Manrope"; font.pixelSize: 16; lineHeight: 1.3
                             }
                         }
                     }
@@ -1173,85 +1596,40 @@ FocusScope {
         Item {
             id: libraryView
             anchors.fill: parent
-            visible: root.tab === 1
-            opacity: visible ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 220 } }
+            visible: opacity > 0
+            opacity: root.tab === 1 ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 240 } }
 
-            Glass {
-                id: filterBar
-                backdrop: glassSource
-                stageItem: stage
-                x: 56
-                y: 104
-                height: 44
-                width: filterRow.width + 8
-                radius: 22
-                border.width: root.libOnFilters ? 2 : (liquid ? 0 : 1)
-                border.color: root.libOnFilters ? "#b3ffffff" : "#1cffffff"
+            readonly property real infoTop: stage.height - 84 - 70
 
-                LiquidPill {
-                    x: filterRow.x + (target ? target.x : 0)
-                    light: true
-                    target: filterRepeater.added >= 0 && filterRepeater.count > root.filterIndex ? filterRepeater.itemAt(root.filterIndex) : null
-                }
-
-                Row {
-                    id: filterRow
-                    anchors.centerIn: parent
-                    spacing: 2
-
-                    Repeater {
-                        id: filterRepeater
-                        property int added: 0   // força a bolha a achar o item quando ele acaba de ser criado
-                        onItemAdded: added++
-                        model: root.filters
-                        delegate: Item {
-                            readonly property bool active: index === root.filterIndex
-                            width: chipContent.width + 30
-                            height: 36
-
-                            Row {
-                                id: chipContent
-                                anchors.centerIn: parent
-                                spacing: 7
-                                Text {
-                                    text: modelData.label
-                                    color: active ? "#0b0c0f" : "#c7ffffff"
-                                    font.family: "Roboto"
-                                    font.pixelSize: 14
-                                    font.weight: active ? Font.DemiBold : Font.Normal
-                                    Behavior on color { ColorAnimation { duration: 200 } }
-                                }
-                                Text {
-                                    anchors.baseline: parent.children[0].baseline
-                                    text: modelData.count
-                                    color: active ? "#8c0b0c0f" : "#6bffffff"
-                                    font.family: "Roboto"
-                                    font.pixelSize: 12
-                                }
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: { root.libOnFilters = false; root.setFilter(index); }
-                            }
-                        }
-                    }
-                }
+            Text {
+                x: 64
+                y: 112
+                text: "BIBLIOTECA  ·  " + root.libCount + (root.libCount === 1 ? " JOGO" : " JOGOS")
+                color: "#99ffffff"
+                font.family: "Manrope"
+                font.weight: Font.Bold
+                font.pixelSize: 13
+                font.letterSpacing: 2.2
             }
 
+            // ordem das prateleiras (seta para cima na primeira prateleira chega aqui)
             Glass {
                 id: sortBar
                 backdrop: glassSource
                 stageItem: stage
                 anchors.right: parent.right
                 anchors.rightMargin: 56
-                y: 104
-                height: 44
+                y: 100
+                height: 46
                 width: sortRow.width + 8
-                radius: 22
+                radius: 23
+                border.width: root.libOnSort ? 3 : (liquid ? 0 : 1)
+                border.color: root.libOnSort ? "#ffffff" : "#1cffffff"
 
                 LiquidPill {
                     x: sortRow.x + (target ? target.x : 0)
+                    light: true
                     target: sortRepeater.added >= 0 && sortRepeater.count > root.sortMode ? sortRepeater.itemAt(root.sortMode) : null
                 }
                 Row {
@@ -1260,20 +1638,20 @@ FocusScope {
                     spacing: 2
                     Repeater {
                         id: sortRepeater
-                        property int added: 0   // força a bolha a achar o item quando ele acaba de ser criado
+                        property int added: 0
                         onItemAdded: added++
                         model: L.SORTS
                         delegate: Item {
-                            width: sortLabel.implicitWidth + 30
-                            height: 36
+                            width: sortLabel.implicitWidth + 32
+                            height: 38
                             Text {
                                 id: sortLabel
                                 anchors.centerIn: parent
                                 text: modelData
-                                color: index === root.sortMode ? "#ffffff" : "#a6ffffff"
-                                font.family: "Roboto"
-                                font.pixelSize: 14
-                                font.weight: index === root.sortMode ? Font.Medium : Font.Normal
+                                color: index === root.sortMode ? "#0b0a14" : "#b3ffffff"
+                                font.family: "Manrope"
+                                font.pixelSize: 15
+                                font.weight: index === root.sortMode ? Font.Bold : Font.Medium
                             }
                             MouseArea { anchors.fill: parent; onClicked: if (index !== root.sortMode) root.setSort(index) }
                         }
@@ -1281,108 +1659,242 @@ FocusScope {
                 }
             }
 
-            Text {
-                x: 56
-                y: 166
-                text: (root.filters.length > root.filterIndex ? root.filters[root.filterIndex].name : "")
-                      + "  ·  " + root.libraryList.length + (root.libraryList.length === 1 ? " jogo" : " jogos")
-                      + "  ·  " + L.SORTS[root.sortMode]
-                color: "#80ffffff"
-                font.family: "Roboto"
-                font.pixelSize: 12
-                font.weight: Font.Medium
-                font.letterSpacing: 1.8
-                font.capitalization: Font.AllUppercase
-            }
-
-            GridView {
-                id: libraryGrid
-                readonly property int columns: Math.max(1, Math.floor(width / cellWidth))
-                x: 56
-                y: 190
-                width: parent.width - 112
-                height: parent.height - y - 262
-                cellWidth: 166
-                cellHeight: 196
+            ListView {
+                id: shelfView
+                x: 0
+                y: 150
+                width: stage.width
+                height: libraryView.infoTop - y - 12
                 clip: true
-                model: root.libraryList
-                currentIndex: root.libIndex
-                highlightMoveDuration: 200
-                highlightRangeMode: GridView.ApplyRange
-                preferredHighlightBegin: cellHeight * 0.3
-                preferredHighlightEnd: height - cellHeight * 1.3
-                cacheBuffer: 800
+                model: root.shelves
+                currentIndex: root.libShelf
+                highlightMoveDuration: 380
+                highlightRangeMode: ListView.ApplyRange
+                preferredHighlightBegin: 0
+                preferredHighlightEnd: height - 8
+                boundsBehavior: Flickable.StopAtBounds
+                cacheBuffer: 600
 
                 delegate: Item {
-                    width: 166
-                    height: 196
+                    id: shelf
+                    readonly property int si: index
+                    readonly property bool isCur: index === root.libShelf
+                    width: shelfView.width
+                    height: 266
 
-                    GameTile {
-                        id: libTile
-                        x: 8
-                        y: 8
-                        entry: modelData
-                        baseSize: 140
-                        selectedSize: 140
-                        selected: index === root.libIndex && !root.libOnFilters
-                        pixelRatio: root.pixelRatio
-                        scale: selected ? 1.06 : 1.0
-                        Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                        onTapped: {
-                            root.libOnFilters = false;
-                            if (index === root.libIndex) root.launchCurrent();
-                            else root.libIndex = index;
+                    Row {
+                        x: 76
+                        y: 6
+                        spacing: 12
+                        Text {
+                            text: modelData.name
+                            color: shelf.isCur ? "#ffffff" : "#b3ffffff"
+                            font.family: "Sora"
+                            font.weight: Font.DemiBold
+                            font.pixelSize: 22
+                        }
+                        Text {
+                            anchors.baseline: parent.children[0].baseline
+                            text: modelData.items.length + (modelData.items.length === 1 ? " jogo" : " jogos")
+                            color: "#8cffffff"
+                            font.family: "Manrope"
+                            font.weight: Font.Medium
+                            font.pixelSize: 15
                         }
                     }
-                    Text {
-                        anchors.top: libTile.bottom
-                        anchors.topMargin: 12
-                        x: 8
-                        width: 140
-                        text: modelData.display
-                        color: libTile.selected ? "#f2ffffff" : "#8cffffff"
-                        font.family: "Roboto"
-                        font.pixelSize: 13
-                        font.weight: libTile.selected ? Font.Medium : Font.Normal
-                        elide: Text.ElideRight
+
+                    // a prateleira (tábua de vidro embaixo das capas)
+                    Rectangle {
+                        x: 56
+                        y: 226
+                        width: parent.width - 56
+                        height: 18
+                        radius: 9
+                        gradient: Gradient {
+                            GradientStop { position: 0.0; color: "#29ffffff" }
+                            GradientStop { position: 1.0; color: "#08ffffff" }
+                        }
+                        Rectangle {
+                            anchors.top: parent.bottom
+                            width: parent.width
+                            height: 22
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "#59000000" }
+                                GradientStop { position: 1.0; color: "#00000000" }
+                            }
+                        }
+                    }
+
+                    ListView {
+                        id: shelfRow
+                        x: 76
+                        y: 40
+                        width: parent.width - 76
+                        height: 196
+                        orientation: ListView.Horizontal
+                        spacing: 22
+                        model: modelData.items
+                        currentIndex: shelf.isCur ? root.libCol : root.colFor(shelf.si)
+                        highlightMoveDuration: 320
+                        highlightRangeMode: ListView.ApplyRange
+                        preferredHighlightBegin: 0
+                        preferredHighlightEnd: width - 260
+                        boundsBehavior: Flickable.StopAtBounds
+                        cacheBuffer: 600
+
+                        delegate: Item {
+                            width: 150
+                            height: 196
+                            GameTile {
+                                y: 36
+                                entry: modelData
+                                baseSize: 150
+                                selScale: 1.1
+                                lift: 12
+                                dimOpacity: shelf.isCur ? 0.8 : 0.62
+                                selected: shelf.isCur && index === root.libCol && !root.libOnSort && root.tab === 1
+                                pixelRatio: root.pixelRatio
+                                onTapped: {
+                                    root.libOnSort = false;
+                                    if (shelf.isCur && index === root.libCol) { root.launchCurrent(); return; }
+                                    if (!shelf.isCur) root.moveShelf(shelf.si - root.libShelf);
+                                    root.libCol = index;
+                                }
+                                onHeld: {
+                                    if (!shelf.isCur) root.moveShelf(shelf.si - root.libShelf);
+                                    root.libCol = index;
+                                    root.openDetails();
+                                }
+                            }
+                        }
                     }
                 }
             }
 
+            // jogo selecionado (barra embaixo)
+            Glass {
+                id: libInfo
+                backdrop: glassSource
+                stageItem: stage
+                x: 56
+                y: libraryView.infoTop
+                width: stage.width - 112
+                height: 84
+                radius: 28
+                visible: root.current !== null && root.tab === 1
+
+                GameTile {
+                    x: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    baseSize: 54
+                    entry: root.tab === 1 ? root.current : null
+                    selected: false
+                    dimOpacity: 1
+                    showRing: false
+                    pixelRatio: root.pixelRatio
+                    cornerRadius: 12
+                }
+                Column {
+                    x: 88
+                    width: parent.width - x - libButtons.width - 40
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 4
+                    Text {
+                        width: parent.width
+                        text: root.current ? root.current.display : ""
+                        color: "#ffffff"; font.family: "Sora"; font.weight: Font.DemiBold; font.pixelSize: 22
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        width: parent.width
+                        text: {
+                            if (!root.current) return "";
+                            var c = root.current;
+                            if (!c.emuOk) return c.sysName + "  ·  Falta instalar o " + c.emuName;
+                            var t = root.trophyInfo(c);
+                            return c.sysName + (c.emuFull ? "  ·  " + c.emuFull : "")
+                                 + (t.kind === "progress" ? "  ·  " + t.got + " de " + t.total + " troféus" : "")
+                                 + (c.playTime > 0 ? "  ·  " + L.formatPlayTime(c.playTime) : "");
+                        }
+                        color: root.current && !root.current.emuOk ? "#ffcc80" : "#a6ffffff"
+                        font.family: "Manrope"; font.weight: Font.Medium; font.pixelSize: 14
+                        elide: Text.ElideRight
+                    }
+                }
+                Row {
+                    id: libButtons
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 10
+                    Rectangle {
+                        width: 120; height: 52; radius: 26
+                        color: "#17ffffff"; border.width: 1; border.color: "#33ffffff"
+                        Text { anchors.centerIn: parent; text: "Detalhes"; color: "#ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 16 }
+                        MouseArea { anchors.fill: parent; onClicked: root.openDetails() }
+                    }
+                    Rectangle {
+                        width: libPlayText.implicitWidth + 56; height: 52; radius: 26
+                        color: "#ffffff"
+                        Text {
+                            id: libPlayText
+                            anchors.centerIn: parent
+                            text: root.current && !root.current.emuOk ? "Como jogar" : (root.current && L.playedTime(root.current) > 0 ? "Continuar" : "Jogar")
+                            color: "#0b0a14"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 17
+                        }
+                        MouseArea { anchors.fill: parent; onClicked: root.launchCurrent() }
+                    }
+                }
+            }
         }
 
         // ============================================== ABA: TROFÉUS
         Item {
             id: trophyView
             anchors.fill: parent
-            visible: root.tab === 2
-            opacity: visible ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 220 } }
+            visible: opacity > 0
+            opacity: root.tab === 2 ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 240 } }
 
+            readonly property real paneX: 650
+            readonly property real bottomY: stage.height - 92
+
+            // resumo geral
             Glass {
                 backdrop: glassSource
                 stageItem: stage
-                id: trophySummary
                 x: 56
-                y: 108
-                width: 520
-                height: 96
+                y: 104
+                width: 560
+                height: 100
+                radius: 28
                 visible: root.raState === "ok"
-
-                Row {
+                Ring {
+                    x: 22
                     anchors.verticalCenter: parent.verticalCenter
-                    x: 26
-                    spacing: 40
-
+                    width: 62; height: 62
+                    lineWidth: 5
+                    pixelRatio: root.pixelRatio
+                    value: root.raTotal > 0 ? root.raGot / root.raTotal : 0
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.raTotal > 0 ? Math.round(100 * root.raGot / root.raTotal) + "%" : "0%"
+                        color: "#ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 14
+                    }
+                }
+                Row {
+                    x: 106
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 36
                     Column {
                         spacing: 6
-                        Text { text: "CONQUISTADOS"; color: "#80ffffff"; font.family: "Roboto"; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 1.4 }
-                        Text { text: root.raGot + "  /  " + root.raTotal; color: "#ffffff"; font.family: "Roboto"; font.pixelSize: 26; font.weight: Font.Light }
+                        Text { text: "CONQUISTADOS"; color: "#80ffffff"; font.family: "Manrope"; font.pixelSize: 12; font.weight: Font.Bold; font.letterSpacing: 1.6 }
+                        Text { text: root.raGot + " de " + root.raTotal; color: "#ffffff"; font.family: "Sora"; font.pixelSize: 24 }
                     }
                     Column {
                         spacing: 6
-                        Text { text: "JOGOS COM TROFÉUS"; color: "#80ffffff"; font.family: "Roboto"; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 1.4 }
-                        Text { text: root.trophyList.length; color: "#ffffff"; font.family: "Roboto"; font.pixelSize: 26; font.weight: Font.Light }
+                        Text { text: "JOGOS COM TROFÉUS"; color: "#80ffffff"; font.family: "Manrope"; font.pixelSize: 12; font.weight: Font.Bold; font.letterSpacing: 1.6 }
+                        Text { text: root.trophyList.length; color: "#ffffff"; font.family: "Sora"; font.pixelSize: 24 }
                     }
                 }
             }
@@ -1391,33 +1903,34 @@ FocusScope {
                 id: accountButton
                 anchors.right: parent.right
                 anchors.rightMargin: 56
-                y: 108
-                width: accountLabel.implicitWidth + 40
-                height: 40
-                radius: 20
-                color: root.raState === "off" ? "#ebffffff" : "#14ffffff"
+                y: 104
+                visible: root.raState !== "ok"
+                width: accountLabel.implicitWidth + 44
+                height: 48
+                radius: 24
+                color: root.raState === "off" ? "#ffffff" : "#17ffffff"
                 border.width: 1
-                border.color: "#26ffffff"
+                border.color: "#33ffffff"
                 Text {
                     id: accountLabel
                     anchors.centerIn: parent
                     text: root.raState === "off" ? "Conectar conta" : "Conta: " + root.raUser()
-                    color: root.raState === "off" ? "#0b0c0f" : "#d9ffffff"
-                    font.family: "Roboto"; font.pixelSize: 14
-                    font.weight: root.raState === "off" ? Font.DemiBold : Font.Normal
+                    color: root.raState === "off" ? "#0b0a14" : "#e6ffffff"
+                    font.family: "Manrope"; font.pixelSize: 16
+                    font.weight: Font.Bold
                 }
                 MouseArea { anchors.fill: parent; onClicked: root.accountOpen = true }
             }
 
             Text {
                 x: 56
-                y: 120
-                width: 760
+                y: 116
+                width: 820
                 visible: root.raState !== "ok"
                 wrapMode: Text.WordWrap
-                color: "#c7ffffff"
-                font.family: "Roboto"
-                font.pixelSize: 18
+                color: "#d9ffffff"
+                font.family: "Manrope"
+                font.pixelSize: 19
                 lineHeight: 1.35
                 text: root.raState === "loading" ? "Carregando seus troféus…"
                     : root.raState === "error" ? "Não foi possível falar com o RetroAchievements. Confira a internet e, em Conta, o usuário e a chave."
@@ -1426,291 +1939,268 @@ FocusScope {
 
             Text {
                 x: 56
-                y: 230
+                y: 236
+                width: 560
+                wrapMode: Text.WordWrap
                 visible: root.raState === "ok" && root.trophyList.length === 0
                 text: Object.keys(root.raCatalogs).length > 0
                       ? "Nenhum jogo da sua biblioteca está no RetroAchievements (o nome do arquivo precisa ser o nome original do jogo)."
                       : "Procurando os jogos da sua biblioteca no RetroAchievements…"
                 color: "#b3ffffff"
-                font.family: "Roboto"
-                font.pixelSize: 16
+                font.family: "Manrope"
+                font.pixelSize: 17
+                lineHeight: 1.3
             }
 
+            // jogos com troféus
             ListView {
                 id: trophyListView
                 x: 56
-                y: 228
-                width: 760
-                height: parent.height - y - 230
+                y: 224
+                width: 560
+                height: trophyView.bottomY - y
                 clip: true
-                spacing: 8
+                spacing: 6
                 model: root.trophyList
                 currentIndex: root.trophyIndex
-                highlightMoveDuration: 200
+                highlightMoveDuration: 220
                 highlightRangeMode: ListView.ApplyRange
                 preferredHighlightBegin: 0
                 preferredHighlightEnd: height - 90
+                boundsBehavior: Flickable.StopAtBounds
 
                 delegate: Rectangle {
                     readonly property bool isSel: index === root.trophyIndex
-                    width: 760
-                    height: 80
-                    radius: 18
-                    color: isSel ? "#1fffffff" : "transparent"
-                    border.width: isSel ? 1 : 0
-                    border.color: "#33ffffff"
+                    width: 560
+                    height: 84
+                    radius: 20
+                    color: isSel ? (root.trophyFocus === 0 ? "#29ffffff" : "#14ffffff") : "transparent"
+                    border.width: isSel ? (root.trophyFocus === 0 ? 2 : 1) : 0
+                    border.color: root.trophyFocus === 0 ? "#e6ffffff" : "#33ffffff"
+                    Behavior on color { ColorAnimation { duration: 160 } }
 
                     GameTile {
-                        x: 10
+                        x: 12
                         anchors.verticalCenter: parent.verticalCenter
                         entry: modelData.entry
-                        baseSize: 58
-                        selectedSize: 58
-                        selected: true
+                        baseSize: 60
+                        selected: false
+                        dimOpacity: 1
+                        showRing: false
+                        cornerRadius: 14
                         pixelRatio: root.pixelRatio
-                        onTapped: {
-                            if (index === root.trophyIndex) root.launchCurrent();
-                            else root.trophyIndex = index;
-                        }
                     }
                     Column {
-                        x: 86
+                        x: 88
+                        width: parent.width - x - 150
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 4
                         Text {
-                            width: 440
+                            width: parent.width
                             text: modelData.entry.display
-                            color: "#f2ffffff"
-                            font.family: "Roboto"
-                            font.pixelSize: 16
-                            font.weight: Font.Medium
+                            color: "#ffffff"
+                            font.family: "Manrope"
+                            font.pixelSize: 17
+                            font.weight: Font.Bold
                             elide: Text.ElideRight
                         }
                         Text {
-                            text: modelData.entry.sysName
-                            color: "#80ffffff"
-                            font.family: "Roboto"
-                            font.pixelSize: 13
+                            text: modelData.entry.sysName + "  ·  " + modelData.got + " de " + modelData.total
+                            color: "#99ffffff"
+                            font.family: "Manrope"
+                            font.weight: Font.Medium
+                            font.pixelSize: 14
+                        }
+                    }
+                    Ring {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 18
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 50; height: 50
+                        lineWidth: 4
+                        pixelRatio: root.pixelRatio
+                        value: modelData.total > 0 ? modelData.got / modelData.total : 0
+                        color: modelData.total > 0 && modelData.got >= modelData.total ? "#5ff0a8" : "#ffd36a"
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData.total > 0 ? Math.round(100 * modelData.got / modelData.total) + "%" : ""
+                            color: "#ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 12
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            root.trophyFocus = 0;
+                            if (index === root.trophyIndex) root.launchCurrent();
+                            else root.trophyIndex = index;
+                        }
+                        onPressAndHold: { root.trophyIndex = index; root.openDetails(); }
+                    }
+                }
+            }
+
+            // conquistas do jogo selecionado
+            Glass {
+                id: achPane
+                backdrop: glassSource
+                stageItem: stage
+                x: trophyView.paneX
+                y: 104
+                width: stage.width - x - 56
+                height: trophyView.bottomY - y
+                radius: 32
+                visible: root.raState === "ok" && root.curTrophy !== null
+
+                readonly property var a: root.curAch
+                readonly property var list: a && a.state === "ok" ? a.list : []
+                readonly property var sel: list.length ? list[L.clampIndex(root.achIndex, list.length)] : null
+
+                Column {
+                    x: 32; y: 26
+                    width: parent.width - 64
+                    spacing: 6
+                    Text {
+                        width: parent.width
+                        text: root.curTrophy ? root.curTrophy.entry.display : ""
+                        color: "#ffffff"; font.family: "Sora"; font.weight: Font.Light; font.pixelSize: 32
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        text: {
+                            var a = achPane.a;
+                            if (!a || a.state === "loading") return "Carregando conquistas…";
+                            if (a.state === "error") return "Não foi possível carregar as conquistas agora";
+                            return a.got + " de " + a.total + " conquistas  ·  " + a.pointsGot + " de " + a.points + " pontos";
+                        }
+                        color: "#b3ffffff"; font.family: "Manrope"; font.weight: Font.Medium; font.pixelSize: 15
+                    }
+                }
+
+                GridView {
+                    id: achGrid
+                    readonly property int columns: Math.max(1, Math.floor(width / cellWidth))
+                    x: 26
+                    y: 108
+                    width: parent.width - 52
+                    height: parent.height - y - 148
+                    cellWidth: 92
+                    cellHeight: 92
+                    clip: true
+                    model: achPane.list
+                    currentIndex: root.achIndex
+                    highlightMoveDuration: 200
+                    highlightRangeMode: GridView.ApplyRange
+                    preferredHighlightBegin: 6
+                    preferredHighlightEnd: height - 6
+                    boundsBehavior: Flickable.StopAtBounds
+                    cacheBuffer: 400
+
+                    delegate: Item {
+                        width: 92; height: 92
+                        readonly property bool isSel: index === root.achIndex && root.trophyFocus === 1
+                        Item {
+                            anchors.centerIn: parent
+                            width: 70; height: 70
+                            scale: isSel ? 1.14 : 1
+                            Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                            Rectangle { anchors.fill: parent; radius: 16; color: "#1fffffff" }
+                            Image {
+                                anchors.fill: parent
+                                source: modelData.badge ? "https://media.retroachievements.org/Badge/" + modelData.badge + (modelData.earned ? "" : "_lock") + ".png" : ""
+                                asynchronous: true
+                                cache: true
+                                sourceSize.width: 128
+                                opacity: modelData.earned ? 1 : 0.5
+                                layer.enabled: true
+                                layer.textureSize: Qt.size(128, 128)
+                                layer.effect: OpacityMask { maskSource: Rectangle { width: 70; height: 70; radius: 16 } }
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: isSel ? -4 : 0
+                                radius: isSel ? 20 : 16
+                                color: "transparent"
+                                border.width: isSel ? 3 : 1
+                                border.color: isSel ? "#ffffff" : (modelData.earned ? "#66ffd36a" : "#1fffffff")
+                            }
+                        }
+                        MouseArea { anchors.fill: parent; onClicked: { root.achIndex = index; root.trophyFocus = 1; } }
+                    }
+                }
+
+                // descrição da conquista escolhida
+                Rectangle {
+                    x: 20
+                    width: parent.width - 40
+                    height: 120
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 20
+                    radius: 24
+                    color: "#26000000"
+                    border.width: 1
+                    border.color: "#1affffff"
+                    visible: achPane.sel !== null
+                    Image {
+                        x: 20
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 80; height: 80
+                        source: achPane.sel ? "https://media.retroachievements.org/Badge/" + achPane.sel.badge + (achPane.sel.earned ? "" : "_lock") + ".png" : ""
+                        asynchronous: true
+                        cache: true
+                        sourceSize.width: 160
+                        layer.enabled: true
+                        layer.textureSize: Qt.size(160, 160)
+                        layer.effect: OpacityMask { maskSource: Rectangle { width: 80; height: 80; radius: 18 } }
+                    }
+                    Column {
+                        x: 120
+                        width: parent.width - x - 170
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 6
+                        Text {
+                            width: parent.width
+                            text: achPane.sel ? achPane.sel.title : ""
+                            color: "#ffffff"; font.family: "Sora"; font.weight: Font.DemiBold; font.pixelSize: 20
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            width: parent.width
+                            text: achPane.sel ? achPane.sel.desc : ""
+                            color: "#c7ffffff"; font.family: "Manrope"; font.pixelSize: 15
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
                         }
                     }
                     Column {
                         anchors.right: parent.right
-                        anchors.rightMargin: 22
+                        anchors.rightMargin: 24
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
+                        spacing: 6
                         Text {
                             anchors.right: parent.right
-                            text: modelData.got + " / " + modelData.total
-                            color: "#ebffffff"
-                            font.family: "Roboto"
-                            font.pixelSize: 16
-                            font.weight: Font.Light
+                            text: achPane.sel ? achPane.sel.points + " pts" : ""
+                            color: "#ffd36a"; font.family: "Sora"; font.weight: Font.DemiBold; font.pixelSize: 20
                         }
-                        Rectangle {
-                            width: 180
-                            height: 3
-                            radius: 2
-                            color: "#1fffffff"
-                            Rectangle {
-                                height: parent.height
-                                radius: 2
-                                width: parent.width * (modelData.total > 0 ? modelData.got / modelData.total : 0)
-                                color: "#ccffffff"
-                            }
-                        }
-                    }
-                    MouseArea {
-                        id: rowArea
-                        anchors.fill: parent
-                        z: -1
-                        onClicked: {
-                            if (index === root.trophyIndex) root.launchCurrent();
-                            else root.trophyIndex = index;
+                        Text {
+                            anchors.right: parent.right
+                            text: achPane.sel ? (achPane.sel.earned ? L.formatDateBR(achPane.sel.date) : "Bloqueada") : ""
+                            color: achPane.sel && achPane.sel.earned ? "#5ff0a8" : "#80ffffff"
+                            font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 14
                         }
                     }
                 }
             }
         }
 
-        // ============================== DETALHES DO JOGO SELECIONADO
-        // Início: grande, embaixo. Biblioteca e Troféus: coluna à direita.
-        Item {
-            id: details
-            visible: root.current !== null && (root.tab === 0 || root.tab === 1 || root.trophyList.length > 0)
-            x: root.tab === 0 ? 56 : (root.tab === 1 ? 56 : 860)
-            width: root.tab === 2 ? stage.width - 860 - 56 : stage.width - 112
-            height: root.tab === 2 ? 420 : 200
-            y: root.tab === 2 ? 228 : stage.height - height - 96
-
-            readonly property var tinfo: root.trophyInfo(root.current)
-            readonly property bool compact: root.tab !== 0
-
-            Column {
-                id: infoCol
-                // posição explícita por aba (âncoras trocadas em tempo real deixavam o layout preso)
-                x: 0
-                y: root.tab === 2 ? 0 : details.height - height
-                width: root.tab === 2 ? parent.width : (root.tab === 0 ? 680 : parent.width - statsPanel.width - 48)
-                spacing: 12
-
-                Text {
-                    text: root.current ? (root.current.sysName + "  ·  " + L.formatLastPlayed(root.current.lastPlayed)
-                                          + (root.current.emuFull ? "  ·  " + root.current.emuFull : "")).toUpperCase() : ""
-                    color: "#8cffffff"
-                    font.family: "Roboto"
-                    font.pixelSize: 12
-                    font.weight: Font.Medium
-                    font.letterSpacing: 1.8
-                }
-                Text {
-                    width: parent.width
-                    text: root.current ? root.current.display : ""
-                    color: "#ffffff"
-                    font.family: "Roboto"
-                    font.weight: Font.Light
-                    font.pixelSize: details.compact ? 34 : 58
-                    font.letterSpacing: details.compact ? -0.5 : -1.4
-                    wrapMode: Text.WordWrap
-                    maximumLineCount: 2
-                    elide: Text.ElideRight
-                    lineHeight: 1.04
-                }
-                Text {
-                    visible: root.current !== null && !root.current.emuOk
-                    text: root.current ? "Falta instalar o " + root.current.emuName + " neste tablet" : ""
-                    color: "#ffcc80"
-                    font.family: "Roboto"
-                    font.pixelSize: 17
-                }
-                Item { width: 1; height: details.compact ? 4 : 10 }
-                Row {
-                    spacing: 12
-
-                    Rectangle {
-                        id: playButton
-                        width: playRow.implicitWidth + 60
-                        height: details.compact ? 48 : 54
-                        radius: height / 2
-                        color: "#ebffffff"
-
-                        Row {
-                            id: playRow
-                            anchors.centerIn: parent
-                            spacing: 10
-                            Canvas {
-                                width: 14
-                                height: 16
-                                anchors.verticalCenter: parent.verticalCenter
-                                onPaint: {
-                                    var ctx = getContext("2d");
-                                    ctx.reset();
-                                    ctx.fillStyle = "#0b0c0f";
-                                    ctx.beginPath();
-                                    ctx.moveTo(1, 1);
-                                    ctx.lineTo(13, 8);
-                                    ctx.lineTo(1, 15);
-                                    ctx.closePath();
-                                    ctx.fill();
-                                }
-                            }
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: root.current && !root.current.emuOk ? "Como jogar"
-                                    : (root.current && L.playedTime(root.current) > 0 ? "Continuar" : "Jogar")
-                                color: "#0b0c0f"
-                                font.family: "Roboto"
-                                font.pixelSize: 16
-                                font.weight: Font.DemiBold
-                            }
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: root.launchCurrent()
-                        }
-                    }
-                }
-            }
-
-            Glass {
-                backdrop: glassSource
-                stageItem: stage
-                id: statsPanel
-                x: details.width - width
-                y: root.tab === 2 ? infoCol.height + 28 : details.height - height
-                width: root.tab === 2 ? parent.width : 420
-                height: 96
-                visible: root.current !== null
-
-                Row {
-                    anchors.fill: parent
-
-                    Item {
-                        width: 180
-                        height: parent.height
-                        Column {
-                            anchors.verticalCenter: parent.verticalCenter
-                            x: 26
-                            spacing: 8
-                            Text { text: "TEMPO JOGADO"; color: "#80ffffff"; font.family: "Roboto"; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 1.4 }
-                            Text {
-                                text: root.current ? L.formatPlayTime(root.current.playTime) : ""
-                                color: "#ffffff"
-                                font.family: "Roboto"
-                                font.pixelSize: 24
-                                font.weight: Font.Light
-                            }
-                        }
-                    }
-                    Rectangle {
-                        width: 1
-                        height: parent.height - 36
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: "#1fffffff"
-                    }
-                    Item {
-                        width: statsPanel.width - 181
-                        height: parent.height
-                        Column {
-                            anchors.verticalCenter: parent.verticalCenter
-                            x: 26
-                            width: parent.width - 52
-                            spacing: 8
-                            Text { text: "TROFÉUS"; color: "#80ffffff"; font.family: "Roboto"; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 1.4 }
-                            Text {
-                                visible: details.tinfo.kind === "progress"
-                                text: details.tinfo.kind === "progress" ? details.tinfo.got + "  /  " + details.tinfo.total : ""
-                                color: "#ffffff"
-                                font.family: "Roboto"
-                                font.pixelSize: 24
-                                font.weight: Font.Light
-                            }
-                            Rectangle {
-                                visible: details.tinfo.kind === "progress"
-                                width: parent.width
-                                height: 3
-                                radius: 2
-                                color: "#1fffffff"
-                                Rectangle {
-                                    height: parent.height
-                                    radius: 2
-                                    color: "#ccffffff"
-                                    width: details.tinfo.kind === "progress" && details.tinfo.total > 0 ? parent.width * details.tinfo.got / details.tinfo.total : 0
-                                    Behavior on width { NumberAnimation { duration: 400 } }
-                                }
-                            }
-                            Text {
-                                visible: details.tinfo.kind !== "progress"
-                                width: parent.width
-                                text: details.tinfo.text || ""
-                                color: "#a6ffffff"
-                                font.family: "Roboto"
-                                font.pixelSize: 14
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                    }
-                }
-            }
+        // ---------------------------------------------------- página do jogo
+        DetailsPage {
+            id: detailsPage
+            anchors.fill: parent
+            host: root
+            backdrop: glassSource
+            stageItem: stage
+            open: root.detailsOpen
         }
 
         // ---------------------------------------------------- configurações
@@ -1725,7 +2215,7 @@ FocusScope {
                 stageItem: stage
                 anchors.right: parent.right
                 anchors.rightMargin: 56
-                y: 96
+                y: 100
                 width: 520
                 height: settingsCol.implicitHeight + 64
                 radius: 32
@@ -1738,7 +2228,7 @@ FocusScope {
                     width: parent.width - 56
                     spacing: 6
 
-                    Text { text: "Configurações"; leftPadding: 12; bottomPadding: 12; color: "#ffffff"; font.family: "Roboto"; font.weight: Font.Light; font.pixelSize: 30 }
+                    Text { text: "Configurações"; leftPadding: 12; bottomPadding: 12; color: "#ffffff"; font.family: "Sora"; font.weight: Font.Light; font.pixelSize: 30 }
 
                     Repeater {
                         model: [
@@ -1760,10 +2250,10 @@ FocusScope {
                                 anchors.verticalCenter: parent.verticalCenter
                                 x: 16
                                 spacing: 3
-                                Text { text: modelData.title; color: "#f2ffffff"; font.family: "Roboto"; font.pixelSize: 17 }
-                                Text { visible: modelData.detail !== ""; text: modelData.detail; color: "#8cffffff"; font.family: "Roboto"; font.pixelSize: 13 }
+                                Text { text: modelData.title; color: "#f2ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 17 }
+                                Text { visible: modelData.detail !== ""; text: modelData.detail; color: "#8cffffff"; font.family: "Manrope"; font.pixelSize: 13 }
                             }
-                            // chave liga/desliga dos sons
+                            // chave liga/desliga da trava
                             Rectangle {
                                 visible: index === 3
                                 anchors.right: parent.right
@@ -1792,7 +2282,7 @@ FocusScope {
                         width: parent.width
                         leftPadding: 12
                         wrapMode: Text.WordWrap
-                        color: "#73ffffff"; font.family: "Roboto"; font.pixelSize: 13; lineHeight: 1.35
+                        color: "#73ffffff"; font.family: "Manrope"; font.pixelSize: 13; lineHeight: 1.35
                         text: "Para abrir o P7 Station ao ligar o tablet: Configurações do Android › Apps › Apps padrão › Tela inicial.\nOptions (ou Start) abre esta tela; com a trava ligada, segure o botão."
                     }
                 }
@@ -1821,14 +2311,14 @@ FocusScope {
                     width: parent.width - 80
                     spacing: 14
 
-                    Text { text: "RetroAchievements"; color: "#ffffff"; font.family: "Roboto"; font.weight: Font.Light; font.pixelSize: 30 }
+                    Text { text: "RetroAchievements"; color: "#ffffff"; font.family: "Sora"; font.weight: Font.Light; font.pixelSize: 30 }
                     Text {
                         width: parent.width
                         wrapMode: Text.WordWrap
                         text: "Crie a conta grátis em retroachievements.org. A chave fica em Settings › Web API Key."
-                        color: "#b3ffffff"; font.family: "Roboto"; font.pixelSize: 15; lineHeight: 1.3
+                        color: "#b3ffffff"; font.family: "Manrope"; font.pixelSize: 15; lineHeight: 1.3
                     }
-                    Text { text: "USUÁRIO"; color: "#80ffffff"; font.family: "Roboto"; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 1.4 }
+                    Text { text: "USUÁRIO"; color: "#80ffffff"; font.family: "Manrope"; font.pixelSize: 12; font.weight: Font.Bold; font.letterSpacing: 1.4 }
                     Rectangle {
                         width: parent.width; height: 48; radius: 14
                         color: "#14ffffff"; border.width: 1; border.color: userField.activeFocus ? "#99ffffff" : "#26ffffff"
@@ -1836,14 +2326,14 @@ FocusScope {
                             id: userField
                             anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16
                             verticalAlignment: TextInput.AlignVCenter
-                            color: "#ffffff"; font.family: "Roboto"; font.pixelSize: 17
+                            color: "#ffffff"; font.family: "Manrope"; font.pixelSize: 17
                             selectByMouse: true
                             inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                             text: root.accountOpen ? root.raUser() : ""
                             KeyNavigation.tab: keyField
                         }
                     }
-                    Text { text: "WEB API KEY"; color: "#80ffffff"; font.family: "Roboto"; font.pixelSize: 12; font.weight: Font.Medium; font.letterSpacing: 1.4 }
+                    Text { text: "WEB API KEY"; color: "#80ffffff"; font.family: "Manrope"; font.pixelSize: 12; font.weight: Font.Bold; font.letterSpacing: 1.4 }
                     Rectangle {
                         width: parent.width; height: 48; radius: 14
                         color: "#14ffffff"; border.width: 1; border.color: keyField.activeFocus ? "#99ffffff" : "#26ffffff"
@@ -1851,7 +2341,7 @@ FocusScope {
                             id: keyField
                             anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16
                             verticalAlignment: TextInput.AlignVCenter
-                            color: "#ffffff"; font.family: "Roboto"; font.pixelSize: 17
+                            color: "#ffffff"; font.family: "Manrope"; font.pixelSize: 17
                             selectByMouse: true
                             echoMode: TextInput.PasswordEchoOnEdit
                             inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText | Qt.ImhSensitiveData
@@ -1863,12 +2353,12 @@ FocusScope {
                         spacing: 12
                         Rectangle {
                             width: 140; height: 48; radius: 24; color: "#ebffffff"
-                            Text { anchors.centerIn: parent; text: "Salvar"; color: "#0b0c0f"; font.family: "Roboto"; font.pixelSize: 16; font.weight: Font.DemiBold }
+                            Text { anchors.centerIn: parent; text: "Salvar"; color: "#0b0c0f"; font.family: "Manrope"; font.pixelSize: 16; font.weight: Font.Bold }
                             MouseArea { anchors.fill: parent; onClicked: root.saveAccount(userField.text, keyField.text) }
                         }
                         Rectangle {
                             width: 140; height: 48; radius: 24; color: "#14ffffff"; border.width: 1; border.color: "#26ffffff"
-                            Text { anchors.centerIn: parent; text: "Cancelar"; color: "#e6ffffff"; font.family: "Roboto"; font.pixelSize: 16 }
+                            Text { anchors.centerIn: parent; text: "Cancelar"; color: "#e6ffffff"; font.family: "Manrope"; font.pixelSize: 16 }
                             MouseArea { anchors.fill: parent; onClicked: { root.accountOpen = false; root.forceActiveFocus(); } }
                         }
                     }
@@ -1905,17 +2395,17 @@ FocusScope {
                     x: 40; y: 36
                     width: parent.width - 80
                     spacing: 16
-                    Text { text: root.noticeTitle; color: "#ffffff"; font.family: "Roboto"; font.weight: Font.Light; font.pixelSize: 32 }
+                    Text { text: root.noticeTitle; color: "#ffffff"; font.family: "Sora"; font.weight: Font.Light; font.pixelSize: 32 }
                     Text {
                         width: parent.width
                         wrapMode: Text.WordWrap
                         text: root.noticeText
-                        color: "#e6ffffff"; font.family: "Roboto"; font.pixelSize: 19; lineHeight: 1.35
+                        color: "#e6ffffff"; font.family: "Manrope"; font.pixelSize: 19; lineHeight: 1.35
                     }
                     Item { width: 1; height: 4 }
                     Rectangle {
                         width: 180; height: 52; radius: 26; color: "#ebffffff"
-                        Text { anchors.centerIn: parent; text: "Entendi"; color: "#0b0c0f"; font.family: "Roboto"; font.pixelSize: 18; font.weight: Font.DemiBold }
+                        Text { anchors.centerIn: parent; text: "Entendi"; color: "#0b0c0f"; font.family: "Manrope"; font.pixelSize: 18; font.weight: Font.Bold }
                         MouseArea { anchors.fill: parent; onClicked: root.noticeOpen = false }
                     }
                 }
@@ -1927,67 +2417,208 @@ FocusScope {
             anchors.right: parent.right
             anchors.rightMargin: 56
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: 34
-            spacing: 26
+            anchors.bottomMargin: 26
+            spacing: 28
+            visible: !root.settingsOpen && !root.accountOpen && !consoles.open && root.launchPhase === ""
 
             Repeater {
                 model: {
                     var favLabel = root.current && root.current.fav ? "Desfavoritar" : "Favoritar";
-                    if (root.tab === 0)
-                        return [ { glyph: "cross", label: "Jogar" }, { glyph: "triangle", label: favLabel }, { glyph: "lr", label: "Trocar aba" } ];
-                    if (root.tab === 1)
-                        return [ { glyph: "cross", label: root.libOnFilters ? "Escolher" : "Jogar" }, { glyph: "triangle", label: favLabel },
-                                 { glyph: "square", label: "Ordenar" }, { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
-                    return [ { glyph: "cross", label: "Jogar" }, { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
+                    if (root.detailsOpen)
+                        return [ { glyph: "cross", label: "Escolher" }, { glyph: "triangle", label: favLabel }, { glyph: "circle", label: "Voltar" } ];
+                    if (root.tab === 0) {
+                        if (root.gearFocused) return [ { glyph: "cross", label: root.kidLock ? "Segure: configurações" : "Configurações" }, { glyph: "circle", label: "Voltar" } ];
+                        if (!root.current) return [ { glyph: "cross", label: "Consoles" }, { glyph: "lr", label: "Trocar aba" } ];
+                        return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "triangle", label: favLabel }, { glyph: "lr", label: "Trocar aba" } ];
+                    }
+                    if (root.tab === 1) {
+                        if (root.libOnSort) return [ { glyph: "leftright", label: "Mudar ordem" }, { glyph: "cross", label: "Pronto" } ];
+                        return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "triangle", label: favLabel },
+                                 { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
+                    }
+                    if (root.trophyFocus === 1)
+                        return [ { glyph: "left", label: "Jogos" }, { glyph: "circle", label: "Voltar" } ];
+                    if (!root.current) return [ { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
+                    return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "right", label: "Conquistas" },
+                             { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
                 }
                 delegate: Row {
-                    spacing: 8
-                    Canvas {
-                        width: 22
-                        height: 22
+                    spacing: 9
+                    Item {
+                        width: 24; height: 24
                         anchors.verticalCenter: parent.verticalCenter
                         visible: modelData.glyph !== "lr"
-                        onPaint: {
-                            var ctx = getContext("2d");
-                            ctx.reset();
-                            ctx.scale(22 / 18, 22 / 18);
-                            ctx.strokeStyle = "rgba(255,255,255,0.55)";
-                            ctx.lineWidth = 1.3;
-                            ctx.beginPath();
-                            ctx.arc(9, 9, 8, 0, Math.PI * 2);
-                            ctx.stroke();
-                            ctx.beginPath();
-                            if (modelData.glyph === "cross") {
-                                ctx.moveTo(6, 6); ctx.lineTo(12, 12);
-                                ctx.moveTo(12, 6); ctx.lineTo(6, 12);
-                            } else if (modelData.glyph === "triangle") {
-                                ctx.moveTo(9, 5.2); ctx.lineTo(12.9, 12); ctx.lineTo(5.1, 12); ctx.closePath();
-                            } else if (modelData.glyph === "square") {
-                                ctx.rect(5.6, 5.6, 6.8, 6.8);
-                            } else {
-                                ctx.arc(9, 9, 3.6, 0, Math.PI * 2);
+                        Canvas {
+                            anchors.centerIn: parent
+                            width: 72; height: 72
+                            scale: 1 / 3
+                            renderTarget: Canvas.Image
+                            onPaint: {
+                                var ctx = getContext("2d");
+                                ctx.reset();
+                                ctx.scale(4, 4);       // 18 → 72
+                                ctx.strokeStyle = "rgba(255,255,255,0.62)";
+                                ctx.lineWidth = 1.2;
+                                ctx.lineJoin = "round";
+                                ctx.lineCap = "round";
+                                ctx.beginPath();
+                                ctx.arc(9, 9, 8, 0, Math.PI * 2);
+                                ctx.stroke();
+                                ctx.strokeStyle = "rgba(255,255,255,0.9)";
+                                ctx.beginPath();
+                                var g = modelData.glyph;
+                                if (g === "cross") {
+                                    ctx.moveTo(6.2, 6.2); ctx.lineTo(11.8, 11.8);
+                                    ctx.moveTo(11.8, 6.2); ctx.lineTo(6.2, 11.8);
+                                } else if (g === "triangle") {
+                                    ctx.moveTo(9, 5.2); ctx.lineTo(12.6, 11.6); ctx.lineTo(5.4, 11.6); ctx.closePath();
+                                } else if (g === "square") {
+                                    ctx.rect(5.8, 5.8, 6.4, 6.4);
+                                } else if (g === "circle") {
+                                    ctx.arc(9, 9, 3.6, 0, Math.PI * 2);
+                                } else if (g === "right") {
+                                    ctx.moveTo(7.5, 5.5); ctx.lineTo(11, 9); ctx.lineTo(7.5, 12.5);
+                                } else if (g === "left") {
+                                    ctx.moveTo(10.5, 5.5); ctx.lineTo(7, 9); ctx.lineTo(10.5, 12.5);
+                                } else {
+                                    ctx.moveTo(6.5, 6.5); ctx.lineTo(4.5, 9); ctx.lineTo(6.5, 11.5);
+                                    ctx.moveTo(11.5, 6.5); ctx.lineTo(13.5, 9); ctx.lineTo(11.5, 11.5);
+                                }
+                                ctx.stroke();
                             }
-                            ctx.stroke();
                         }
                     }
                     Text {
                         visible: modelData.glyph === "lr"
                         anchors.verticalCenter: parent.verticalCenter
                         text: "L1 R1"
-                        color: "#8cffffff"
-                        font.family: "Roboto"
+                        color: "#ccffffff"
+                        font.family: "Manrope"
                         font.pixelSize: 13
-                        font.weight: Font.Medium
+                        font.weight: Font.Bold
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.label
-                        color: "#99ffffff"
-                        font.family: "Roboto"
-                        font.pixelSize: 16
+                        color: "#a6ffffff"
+                        font.family: "Manrope"
+                        font.weight: Font.Medium
+                        font.pixelSize: 15
                     }
                 }
             }
+        }
+
+        // ---------------------------------------------------- abrir o jogo
+        // clarão
+        RadialGradient {
+            id: flashLayer
+            anchors.fill: parent
+            opacity: 0
+            visible: opacity > 0
+            horizontalOffset: root.tab === 0 && !root.detailsOpen ? width * 0.18 : 0
+            horizontalRadius: width * 0.75
+            verticalRadius: height * 0.95
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#ffffff" }
+                GradientStop { position: 0.3; color: Qt.rgba(0.75, 0.7, 1.0, 0.92) }
+                GradientStop { position: 0.75; color: "#0005040b" }
+            }
+        }
+        // tela "Abrindo…"
+        Item {
+            id: opening
+            anchors.fill: parent
+            visible: root.launchPhase === "open"
+            readonly property var e: root.launchEntry
+
+            Rectangle { anchors.fill: parent; color: "#05040b" }
+            RadialGradient {
+                anchors.fill: parent
+                verticalOffset: -height * 0.06
+                horizontalRadius: width * 0.5
+                verticalRadius: height * 0.6
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: opening.e ? Qt.rgba(Qt.lighter(opening.e.color, 1.2).r, Qt.lighter(opening.e.color, 1.2).g, Qt.lighter(opening.e.color, 1.2).b, 0.35) : "#22000000" }
+                    GradientStop { position: 1.0; color: "transparent" }
+                }
+            }
+            Column {
+                anchors.centerIn: parent
+                spacing: 20
+                Item {
+                    width: 150; height: 150
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    RectangularGlow {
+                        anchors.fill: parent
+                        glowRadius: 40
+                        spread: 0.15
+                        cornerRadius: 30 + glowRadius
+                        color: opening.e ? Qt.lighter(opening.e.color, 1.3) : "#6a4cff"
+                        opacity: 0.45
+                    }
+                    GameTile {
+                        anchors.fill: parent
+                        baseSize: 150
+                        entry: opening.e
+                        selected: false
+                        dimOpacity: 1
+                        showRing: false
+                        pixelRatio: root.pixelRatio
+                    }
+                }
+                Item { width: 1; height: 6 }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: opening.e ? opening.e.display : ""
+                    color: "#ffffff"
+                    font.family: "Sora"
+                    font.weight: Font.Light
+                    font.pixelSize: 38
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: opening.e ? "Abrindo " + (opening.e.emuFull || opening.e.emuName || "o jogo") : ""
+                    color: "#a6ffffff"
+                    font.family: "Manrope"
+                    font.weight: Font.Medium
+                    font.pixelSize: 18
+                }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 10
+                    Repeater {
+                        model: 3
+                        delegate: Rectangle {
+                            width: 10; height: 10; radius: 5
+                            color: "#ffffff"
+                            opacity: 0.25
+                            SequentialAnimation on opacity {
+                                running: opening.visible
+                                loops: Animation.Infinite
+                                PauseAnimation { duration: index * 150 }
+                                NumberAnimation { to: 1; duration: 300 }
+                                NumberAnimation { to: 0.25; duration: 300 }
+                                PauseAnimation { duration: (2 - index) * 150 + 100 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        SequentialAnimation {
+            id: flashAnim
+            NumberAnimation { target: flashLayer; property: "opacity"; from: 0; to: 1; duration: 340; easing.type: Easing.OutQuad }
+            ScriptAction { script: root.launchPhase = "open" }
+            NumberAnimation { target: flashLayer; property: "opacity"; to: 0; duration: 620; easing.type: Easing.InOutQuad }
+            PauseAnimation { duration: 420 }
+            ScriptAction { script: root.doLaunch() }
+        }
+        // toque na tela durante a animação: não deixa abrir outra coisa por baixo
+        MouseArea {
+            anchors.fill: parent
+            visible: root.launchPhase !== ""
+            onClicked: if (root.launchPhase === "media") root.startFlash()
         }
 
         // ---------------------------------------------------- aviso rápido
@@ -2000,19 +2631,21 @@ FocusScope {
             Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
             visible: y > -80
             width: toastLabel.implicitWidth + 56
-            height: 52
-            radius: 26
+            height: 54
+            radius: 27
             tint: "#40101018"
             Text {
                 id: toastLabel
                 anchors.centerIn: parent
                 text: root.toastShown
                 color: "#ffffff"
-                font.family: "Roboto"
+                font.family: "Manrope"
+                font.weight: Font.Medium
                 font.pixelSize: 18
             }
         }
-            // ---------------------------------------------------- abertura
+
+        // ---------------------------------------------------- abertura
         // Continua de onde a tela de carregamento parou (mesmo ícone, mesmo lugar): um brilho
         // se abre atrás do ícone com o som de abertura e o menu aparece. Cerca de 1,5 s.
         Item {

@@ -175,6 +175,16 @@ def main(out_dir):
     rise = place(2.4, (0.0, noise_swish(0.9, 200, 4000) * 0.18))
     save(out / "boot.wav", finish(reverb(sub * 0.7 + body + crystal + rise, wet=0.35, room=0.86, tail=1.2), peak_db=-3))
 
+    # encaixe da mídia na base: estalo curto de plástico, um "tum" grave e o bipe da luz acendendo
+    n = int(SR * 0.018)
+    click = np.random.normal(0, 1, n) * np.exp(-np.arange(n) / (SR * 0.004))
+    click = np.convolve(click, np.ones(6) / 6, mode="same")
+    tt = t_axis(0.16)
+    thunk = np.sin(2 * np.pi * (140 - 60 * tt / 0.16) * tt) * np.exp(-tt * 34)
+    blip = bell(2349, 0.22, ratio=2.0, index=0.4, decay=9) * 0.35
+    ins = place(0.42, (0, click * 0.9), (0.004, thunk * 0.8), (0.09, blip))
+    save(out / "insert.wav", finish(reverb(ins, wet=0.16, tail=0.2), peak_db=-5))
+
 
 if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1 else ".")

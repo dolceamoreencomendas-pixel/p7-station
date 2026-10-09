@@ -1,0 +1,32 @@
+name: P7 Station - teste do tema no computador
+on:
+  push:
+    branches: [visual]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tema:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar Qt 5.15 e ferramentas
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qtdeclarative5-dev qtbase5-dev-tools qml-module-qtquick2 qml-module-qtquick-window2 \
+            qml-module-qtgraphicaleffects qml-module-qtmultimedia qml-module-qtqml-models2 libqt5multimedia5-plugins \
+            xvfb ffmpeg libgl1-mesa-dri fonts-roboto >/dev/null
+      - name: Rodar o tema
+        run: bash tools/teste-tema/rodar.sh "$PWD/resultado"
+      - name: Publicar prints
+        if: always()
+        run: |
+          cd resultado && zip -q ../prints.zip * && cd ..
+          gh release create "tema-${{ github.run_number }}" --prerelease \
+            --title "Tema ${{ github.run_number }} (computador)" \
+            --notes "Prints do tema rodando fora do Android. Não é para instalar." \
+            prints.zip resultado/*.png resultado/*.txt resultado/*.mp4
+        env:
+          GH_TOKEN: ${{ github.token }}

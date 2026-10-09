@@ -221,12 +221,12 @@ Item {
             Text {
                 text: panel.mode === "browser" ? (panel.browserTarget === "*" ? "Pasta dos jogos" : "Pasta · " + EM.byKey(panel.browserTarget).name)
                     : (panel.mode === "detail" && panel.detail ? panel.detail.sys.name : "Consoles e emuladores")
-                color: "#ffffff"; font.family: "Roboto"; font.weight: Font.Light; font.pixelSize: 32
+                color: "#ffffff"; font.family: "Sora"; font.weight: Font.Light; font.pixelSize: 32
             }
             Text {
                 width: parent.width
                 elide: Text.ElideMiddle
-                color: "#8cffffff"; font.family: "Roboto"; font.pixelSize: 14
+                color: "#8cffffff"; font.family: "Manrope"; font.pixelSize: 14
                 text: {
                     void panel.version;
                     if (panel.mode === "browser") return panel.shortPath(panel.browserPath);
@@ -274,7 +274,7 @@ Item {
                     spacing: 3
                     Text {
                         text: index === 0 ? "Pasta dos jogos" : "Pronto"
-                        color: "#f2ffffff"; font.family: "Roboto"; font.pixelSize: 18
+                        color: "#f2ffffff"; font.family: "Manrope"; font.pixelSize: 18
                     }
                     Text {
                         visible: index === 0
@@ -284,7 +284,7 @@ Item {
                             return panel.host.p7Root ? panel.shortPath(panel.host.p7Root)
                                  : "Automático: procura em " + (panel.host.p7Roots.length ? panel.host.p7Roots.map(panel.shortPath).join(", ") : "ROMs, Jogos, Emulation...");
                         }
-                        color: "#8cffffff"; font.family: "Roboto"; font.pixelSize: 13
+                        color: "#8cffffff"; font.family: "Manrope"; font.pixelSize: 13
                     }
                 }
 
@@ -302,23 +302,23 @@ Item {
                         x: 44; anchors.verticalCenter: parent.verticalCenter
                         width: 360
                         spacing: 3
-                        Text { text: row ? row.sys.name : ""; color: row && row.off ? "#73ffffff" : "#f2ffffff"; font.family: "Roboto"; font.pixelSize: 18 }
+                        Text { text: row ? row.sys.name : ""; color: row && row.off ? "#73ffffff" : "#f2ffffff"; font.family: "Manrope"; font.pixelSize: 18 }
                         Text {
                             width: parent.width; elide: Text.ElideMiddle
                             text: row ? (row.off ? "Não aparece na biblioteca" : (row.folder ? panel.shortPath(row.folder) : "Pasta não encontrada")) : ""
-                            color: "#80ffffff"; font.family: "Roboto"; font.pixelSize: 13
+                            color: "#80ffffff"; font.family: "Manrope"; font.pixelSize: 13
                         }
                     }
                     Text {
                         x: 430; anchors.verticalCenter: parent.verticalCenter
                         width: 300; elide: Text.ElideRight
                         text: row ? EM.emuLabel(row.emu) : ""
-                        color: row && row.ok ? "#d9ffffff" : "#80ffffff"; font.family: "Roboto"; font.pixelSize: 15
+                        color: row && row.ok ? "#d9ffffff" : "#80ffffff"; font.family: "Manrope"; font.pixelSize: 15
                     }
                     Text {
                         x: 760; anchors.verticalCenter: parent.verticalCenter
                         text: row && row.folder && !row.off ? row.count + (row.count === 1 ? " jogo" : " jogos") : ""
-                        color: "#80ffffff"; font.family: "Roboto"; font.pixelSize: 14
+                        color: "#80ffffff"; font.family: "Manrope"; font.pixelSize: 14
                     }
                     Rectangle {
                         anchors.right: parent.right; anchors.rightMargin: 18
@@ -331,7 +331,7 @@ Item {
                             id: statusText
                             anchors.centerIn: parent
                             text: row ? row.status : ""
-                            color: "#f2ffffff"; font.family: "Roboto"; font.pixelSize: 13
+                            color: "#f2ffffff"; font.family: "Manrope"; font.pixelSize: 13
                         }
                     }
                 }
@@ -376,15 +376,15 @@ Item {
                         x: 20; anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - 120
                         spacing: 4
-                        Text { text: modelData.title; color: "#f2ffffff"; font.family: "Roboto"; font.pixelSize: 18 }
-                        Text { visible: modelData.detail !== ""; width: parent.width; elide: Text.ElideMiddle; text: modelData.detail; color: "#99ffffff"; font.family: "Roboto"; font.pixelSize: 14 }
+                        Text { text: modelData.title; color: "#f2ffffff"; font.family: "Manrope"; font.pixelSize: 18 }
+                        Text { visible: modelData.detail !== ""; width: parent.width; elide: Text.ElideMiddle; text: modelData.detail; color: "#99ffffff"; font.family: "Manrope"; font.pixelSize: 14 }
                     }
                     Text {
                         visible: modelData.arrows === true
                         anchors.right: parent.right; anchors.rightMargin: 22
                         anchors.verticalCenter: parent.verticalCenter
                         text: "‹   ›"
-                        color: "#b3ffffff"; font.family: "Roboto"; font.pixelSize: 22
+                        color: "#b3ffffff"; font.family: "Manrope"; font.pixelSize: 22
                     }
                     MouseArea {
                         anchors.fill: parent
@@ -410,7 +410,7 @@ Item {
                     x: 20; y: 16
                     width: parent.width - 40
                     wrapMode: Text.WordWrap
-                    color: "#f2ffffff"; font.family: "Roboto"; font.pixelSize: 15; lineHeight: 1.3
+                    color: "#f2ffffff"; font.family: "Manrope"; font.pixelSize: 15; lineHeight: 1.3
                     text: {
                         var d = panel.detail;
                         if (!d || d.off) return "";
@@ -428,7 +428,7 @@ Item {
                 leftPadding: 20
                 topPadding: 8
                 wrapMode: Text.WordWrap
-                color: "#73ffffff"; font.family: "Roboto"; font.pixelSize: 13; lineHeight: 1.3
+                color: "#73ffffff"; font.family: "Manrope"; font.pixelSize: 13; lineHeight: 1.3
                 text: panel.detail ? "Arquivos aceitos: " + panel.detail.sys.exts.join(", ") + ".   No Emulador, use esquerda e direita para trocar." : ""
             }
         }
@@ -463,7 +463,7 @@ Item {
                     text: modelData.kind === "use" ? "✓   " + modelData.label
                         : (modelData.kind === "up" ? "‹   " + modelData.label : "▸   " + modelData.label)
                     color: modelData.kind === "dir" ? "#e6ffffff" : "#ffffff"
-                    font.family: "Roboto"; font.pixelSize: 17
+                    font.family: "Manrope"; font.pixelSize: 17
                     font.weight: modelData.kind === "use" ? Font.Medium : Font.Normal
                 }
                 MouseArea {

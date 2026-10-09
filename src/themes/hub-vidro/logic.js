@@ -169,7 +169,8 @@ function indexAchievements(results) {
         var item = {
             got: Math.max(Number(r.NumAwardedHardcore) || 0, Number(r.NumAwarded) || 0),
             total: Number(r.MaxPossible) || 0,
-            consoleId: Number(r.ConsoleID) || 0
+            consoleId: Number(r.ConsoleID) || 0,
+            gameId: Number(r.GameID) || 0
         };
         if (!idx[key]) idx[key] = [];
         idx[key].push(item);
@@ -185,11 +186,12 @@ function indexCatalog(list) {
         var title = String(g.Title || g.title || "");
         if (!title || title.charAt(0) === "~" || /\[subset/i.test(title)) return;
         var n = Number(g.NumAchievements || g.numAchievements) || 0;
+        var id = Number(g.ID || g.id) || 0;
         if (n <= 0) return;
         // títulos alternativos vêm separados por " | "
         title.split("|").forEach(function (part) {
             var key = normalize(part);
-            if (key && !(key in out)) out[key] = n;
+            if (key && !(key in out)) out[key] = [n, id];
         });
     });
     return out;
@@ -212,13 +214,18 @@ function trophiesFor(idx, entry, catalogs) {
     if (list) {
         for (var i = 0; i < list.length; i++) {
             if (sys.ra.indexOf(list[i].consoleId) !== -1 && list[i].total > 0)
-                return { got: list[i].got, total: list[i].total, played: true };
+                return { got: list[i].got, total: list[i].total, played: true, gameId: list[i].gameId };
         }
     }
     if (catalogs) {
         for (var j = 0; j < sys.ra.length; j++) {
             var cat = catalogs[sys.ra[j]];
-            if (cat && cat[key]) return { got: 0, total: cat[key], played: false };
+            var c = cat ? cat[key] : null;
+            if (c) {
+                var n = typeof c === "number" ? c : c[0];
+                var gid = typeof c === "number" ? 0 : c[1];
+                return { got: 0, total: n, played: false, gameId: gid };
+            }
         }
     }
     return null;
@@ -233,4 +240,145 @@ function clampIndex(i, count) {
     if (i < 0) return 0;
     if (i >= count) return count - 1;
     return i;
+}
+
+// Prateleiras da Biblioteca: uma por console (do mais novo ao mais antigo), favoritos primeiro.
+function buildShelves(entries, sortMode) {
+    var bySys = {};
+    var favs = [];
+    (entries || []).forEach(function (e) {
+        (bySys[e.sys] = bySys[e.sys] || []).push(e);
+        if (e.fav) favs.push(e);
+    });
+    var out = [];
+    if (favs.length) out.push({ key: "*fav", name: "Favoritos", short: "♥", color: "#ff5c8a", items: sortList(favs, sortMode) });
+    SYSTEM_ORDER.forEach(function (k) {
+        if (bySys[k]) out.push({ key: k, name: SYSTEMS[k].name, short: SYSTEMS[k].short, color: SYSTEMS[k].color, items: sortList(bySys[k], sortMode) });
+    });
+    Object.keys(bySys).forEach(function (k) {
+        if (!SYSTEMS.hasOwnProperty(k)) out.push({ key: k, name: systemInfo(k).name, short: systemInfo(k).short, color: "#5a5f6b", items: sortList(bySys[k], sortMode) });
+    });
+    return out;
+}
+
+// Conquistas de um jogo (API_GetGameInfoAndUserProgress) em lista: conquistadas primeiro, na ordem do jogo
+function parseGameAchievements(data) {
+    var list = [];
+    var ach = data && (data.Achievements || data.achievements) || {};
+    Object.keys(ach).forEach(function (k) {
+        var a = ach[k];
+        var date = a.DateEarnedHardcore || a.DateEarned || "";
+        list.push({
+            title: String(a.Title || ""),
+            desc: String(a.Description || ""),
+            points: Number(a.Points) || 0,
+            badge: String(a.BadgeName || ""),
+            earned: date !== "",
+            date: date ? String(date).substring(0, 10) : "",
+            when: String(date),
+            order: Number(a.DisplayOrder) || 0
+        });
+    });
+    list.sort(function (a, b) {
+        if (a.earned !== b.earned) return a.earned ? -1 : 1;
+        return a.order - b.order;
+    });
+    var got = 0, points = 0, pointsGot = 0;
+    list.forEach(function (a) { points += a.points; if (a.earned) { got++; pointsGot += a.points; } });
+    return { list: list, got: got, total: list.length, points: points, pointsGot: pointsGot };
+}
+
+// "2026-10-08" -> "08/10/2026"
+function formatDateBR(d) {
+    var m = String(d || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? m[3] + "/" + m[2] + "/" + m[1] : "";
+}
+
+// ------------------------------------------------------------ capa gerada
+// Jogo sem capa: degradê na cor do console, puxado um pouco para outro tom pelo nome do jogo
+// (dois jogos do mesmo console não ficam iguais). Devolve [cor clara, cor escura].
+function hexToHsl(hex) {
+    var h = String(hex || "#5a5f6b").replace("#", "");
+    if (h.length === 8) h = h.substring(2);
+    var r = parseInt(h.substring(0, 2), 16) / 255, g = parseInt(h.substring(2, 4), 16) / 255, b = parseInt(h.substring(4, 6), 16) / 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, s = 0, hue = 0;
+    if (max !== min) {
+        var d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) hue = (g - b) / d + (g < b ? 6 : 0);
+        else if (max === g) hue = (b - r) / d + 2;
+        else hue = (r - g) / d + 4;
+        hue /= 6;
+    }
+    return [hue, s, l];
+}
+
+function hslToHex(h, s, l) {
+    function f(p, q, t) {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    }
+    var r, g, b;
+    if (s === 0) { r = g = b = l; }
+    else {
+        var q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+        r = f(p, q, h + 1 / 3); g = f(p, q, h); b = f(p, q, h - 1 / 3);
+    }
+    function x(v) { var n = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16); return n.length < 2 ? "0" + n : n; }
+    return "#" + x(r) + x(g) + x(b);
+}
+
+function titleHash(t) {
+    var s = String(t || ""), h = 2166136261;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return h;
+}
+
+function coverColors(color, title) {
+    var hsl = hexToHsl(color);
+    var k = titleHash(cleanTitle(title));
+    var shift = ((k % 1000) / 1000 - 0.5) * 0.16;          // ± 29° de matiz
+    var h = (hsl[0] + shift + 1) % 1;
+    var s = Math.max(0.45, Math.min(0.9, hsl[1] + 0.15));
+    var light = hslToHex(h, s, Math.max(0.5, Math.min(0.66, hsl[2] + 0.12)));
+    var dark = hslToHex((h + 0.92 - ((k >> 10) % 100) / 2000) % 1, Math.min(0.8, s), 0.15);
+    return [light, dark];
+}
+
+// Data da conquista mais nova primeiro (para "conquistas recentes")
+function recentEarned(list, limit) {
+    var got = (list || []).filter(function (a) { return a.earned; });
+    got.sort(function (a, b) { return a.when < b.when ? 1 : (a.when > b.when ? -1 : 0); });
+    return got.slice(0, limit || 8);
+}
+
+// "Ontem" -> "ontem", para usar no meio da frase ("Último: ontem")
+function shortLastPlayed(date) {
+    var s = formatLastPlayed(date);
+    if (/^\d/.test(s)) return s;
+    return s.charAt(0).toLowerCase() + s.substring(1);
+}
+
+// Nome curto do controle para o topo ("Sony ... Wireless Controller" -> "DualSense")
+function padLabel(name) {
+    var n = String(name || "");
+    if (/dualsense|wireless controller/i.test(n)) return "DualSense";
+    if (/dualshock/i.test(n)) return "DualShock";
+    if (/xbox/i.test(n)) return "Xbox";
+    if (/8bitdo/i.test(n)) return "8BitDo";
+    if (/pro controller/i.test(n)) return "Pro Controller";
+    n = n.replace(/\s+/g, " ").trim();
+    return n.length > 18 ? n.substring(0, 17) + "…" : (n || "Controle");
+}
+
+// Cor do anel da bateria
+function batteryColor(level, charging) {
+    if (charging) return "#7fd6ff";
+    if (level <= 15) return "#ff7a6b";
+    if (level <= 30) return "#ffc35a";
+    return "#5ff0a8";
 }

@@ -21,6 +21,16 @@
         <file>hub-vidro/sounds/pad-on.wav</file>
         <file>hub-vidro/sounds/pad-off.wav</file>
         <file>hub-vidro/sounds/boot.wav</file>
+        <file>hub-vidro/MediaArt.qml</file>
+        <file>hub-vidro/DetailsPage.qml</file>
+        <file>hub-vidro/Ring.qml</file>
+        <file>hub-vidro/sounds/insert.wav</file>
+        <file>hub-vidro/fonts/Sora-Light.ttf</file>
+        <file>hub-vidro/fonts/Sora-Regular.ttf</file>
+        <file>hub-vidro/fonts/Sora-SemiBold.ttf</file>
+        <file>hub-vidro/fonts/Manrope-Regular.ttf</file>
+        <file>hub-vidro/fonts/Manrope-Medium.ttf</file>
+        <file>hub-vidro/fonts/Manrope-Bold.ttf</file>
         <file>pegasus-theme-grid/theme.cfg</file>
         <file>pegasus-theme-grid/theme.qml</file>
         <file>pegasus-theme-grid/layer_filter/CheckBox.qml</file>
