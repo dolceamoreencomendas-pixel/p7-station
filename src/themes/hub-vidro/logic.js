@@ -160,13 +160,14 @@ function indexOfFilter(filters, key) {
 }
 
 // Resposta do API_GetUserCompletionProgress -> índice por nome normalizado (+ console).
+// Progresso do usuário (API_GetUserCompletionProgress): só jogos que ele já abriu com o RetroAchievements.
 function indexAchievements(results) {
     var idx = {};
     (results || []).forEach(function (r) {
         var key = normalize(r.Title);
         if (!key) return;
         var item = {
-            got: Number(r.NumAwardedHardcore) > Number(r.NumAwarded) ? Number(r.NumAwardedHardcore) : Number(r.NumAwarded) || 0,
+            got: Math.max(Number(r.NumAwardedHardcore) || 0, Number(r.NumAwarded) || 0),
             total: Number(r.MaxPossible) || 0,
             consoleId: Number(r.ConsoleID) || 0
         };
@@ -176,14 +177,49 @@ function indexAchievements(results) {
     return idx;
 }
 
-// Devolve {got,total} ou null. Sistemas sem RetroAchievements (Switch, Wii U) devolvem null.
-function trophiesFor(idx, entry) {
+// Catálogo de um console (API_GetGameList com f=1): todos os jogos que têm troféus.
+// Devolve { chave: total } sem subconjuntos, hacks e homebrews (que repetiriam o nome).
+function indexCatalog(list) {
+    var out = {};
+    (list || []).forEach(function (g) {
+        var title = String(g.Title || g.title || "");
+        if (!title || title.charAt(0) === "~" || /\[subset/i.test(title)) return;
+        var n = Number(g.NumAchievements || g.numAchievements) || 0;
+        if (n <= 0) return;
+        // títulos alternativos vêm separados por " | "
+        title.split("|").forEach(function (part) {
+            var key = normalize(part);
+            if (key && !(key in out)) out[key] = n;
+        });
+    });
+    return out;
+}
+
+// IDs de console do RetroAchievements que aparecem na biblioteca
+function raConsolesIn(entries) {
+    var ids = {};
+    (entries || []).forEach(function (e) { systemInfo(e.sys).ra.forEach(function (id) { ids[id] = true; }); });
+    return Object.keys(ids).map(Number);
+}
+
+// Devolve {got,total,played} ou null. Jogos que o usuário nunca abriu aparecem com 0 de N
+// quando estão no catálogo. Sistemas sem RetroAchievements (Switch, Wii U) devolvem null.
+function trophiesFor(idx, entry, catalogs) {
     var sys = systemInfo(entry.sys);
-    if (!sys.ra.length || !idx) return null;
-    var list = idx[normalize(entry.title)];
-    if (!list) return null;
-    for (var i = 0; i < list.length; i++) {
-        if (sys.ra.indexOf(list[i].consoleId) !== -1 && list[i].total > 0) return list[i];
+    if (!sys.ra.length) return null;
+    var key = normalize(entry.title);
+    var list = idx ? idx[key] : null;
+    if (list) {
+        for (var i = 0; i < list.length; i++) {
+            if (sys.ra.indexOf(list[i].consoleId) !== -1 && list[i].total > 0)
+                return { got: list[i].got, total: list[i].total, played: true };
+        }
+    }
+    if (catalogs) {
+        for (var j = 0; j < sys.ra.length; j++) {
+            var cat = catalogs[sys.ra[j]];
+            if (cat && cat[key]) return { got: 0, total: cat[key], played: false };
+        }
     }
     return null;
 }

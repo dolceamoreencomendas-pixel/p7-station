@@ -41,6 +41,7 @@ FocusScope {
     property int trophyIndex: 0
     property var raIndex: null
     property string raState: "off"            // off · loading · ok · error
+    property var raCatalogs: ({})            // { consoleId: { título normalizado: total de troféus } }
     property int raGot: 0
     property int raTotal: 0
 
@@ -234,6 +235,7 @@ FocusScope {
         return {
             emuOk: !emu || !known || EM.isInstalled(emu, p7Installed),
             emuName: emu ? emu.label : "",
+            emuFull: emu ? EM.emuLabel(emu) : "",
             emuHint: emu && known ? EM.setupHint(sysDef, emu, p7Installed) : "",
             game: g,
             title: g.title,
@@ -417,19 +419,65 @@ FocusScope {
     onTabChanged: bumpLayout()
     onNoticeOpenChanged: bumpLayout()
 
+    // Catálogo de troféus de cada console da biblioteca (guardado por 7 dias: a lista é grande)
+    function loadCatalogs() {
+        var ids = L.raConsolesIn(entries);
+        var cats = {};
+        var pending = [];
+        var now = Date.now();
+        ids.forEach(function (id) {
+            var mem = "raCat" + id;
+            var cached = null;
+            if (api.memory.has(mem)) {
+                try { cached = JSON.parse(String(api.memory.get(mem))); } catch (e) { cached = null; }
+            }
+            if (cached && cached.t && now - cached.t < 7 * 24 * 3600 * 1000 && cached.m) cats[id] = cached.m;
+            else pending.push(id);
+        });
+        raCatalogs = cats;
+        rebuildTrophies();
+        function next() {
+            if (!pending.length) return;
+            var id = pending.shift();
+            var xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState !== XMLHttpRequest.DONE) return;
+                if (xhr.status === 200) {
+                    try {
+                        var m = L.indexCatalog(JSON.parse(xhr.responseText));
+                        api.memory.set("raCat" + id, JSON.stringify({ t: Date.now(), m: m }));
+                        var c = Object.assign({}, root.raCatalogs);
+                        c[id] = m;
+                        root.raCatalogs = c;
+                        root.rebuildTrophies();
+                    } catch (e) { console.warn("P7: catálogo " + id + ": " + e); }
+                } else {
+                    console.warn("P7: catálogo " + id + " respondeu " + xhr.status);
+                }
+                next();
+            };
+            xhr.open("GET", "https://retroachievements.org/API/API_GetGameList.php?f=1&i=" + id
+                     + "&y=" + encodeURIComponent(raKey()));
+            xhr.send();
+        }
+        next();
+    }
+
     function rebuildTrophies() {
         var list = [];
         var got = 0, total = 0;
         if (raIndex) {
             for (var i = 0; i < entries.length; i++) {
-                var t = L.trophiesFor(raIndex, entries[i]);
+                var t = L.trophiesFor(raIndex, entries[i], raCatalogs);
                 if (t) {
-                    list.push({ entry: entries[i], got: t.got, total: t.total });
+                    list.push({ entry: entries[i], got: t.got, total: t.total, played: t.played });
                     got += t.got;
                     total += t.total;
                 }
             }
             list.sort(function (a, b) {
+                if (a.played !== b.played) return a.played ? -1 : 1;     // os já começados primeiro
+                if ((a.got > 0) !== (b.got > 0)) return a.got > 0 ? -1 : 1;
                 var da = L.playedTime(a.entry), db = L.playedTime(b.entry);
                 if (da !== db) return db - da;
                 return a.entry.display < b.entry.display ? -1 : 1;
@@ -469,6 +517,7 @@ FocusScope {
                     raIndex = L.indexAchievements(data.Results || data.results);
                     raState = "ok";
                     rebuildTrophies();
+                    loadCatalogs();
                 } catch (err) {
                     raState = "error";
                 }
@@ -486,7 +535,7 @@ FocusScope {
         if (raState === "off") return { kind: "none", text: "Conecte o RetroAchievements" };
         if (raState === "loading") return { kind: "none", text: "Carregando…" };
         if (raState === "error") return { kind: "none", text: "Sem conexão com o RetroAchievements" };
-        var t = L.trophiesFor(raIndex, entry);
+        var t = L.trophiesFor(raIndex, entry, raCatalogs);
         if (!t) return { kind: "none", text: "Sem troféus para este jogo" };
         return { kind: "progress", got: t.got, total: t.total };
     }
@@ -1379,7 +1428,9 @@ FocusScope {
                 x: 56
                 y: 230
                 visible: root.raState === "ok" && root.trophyList.length === 0
-                text: "Nenhum jogo da sua biblioteca tem troféus ainda. Jogue um de SNES, PS1 ou PS2 pelo hub."
+                text: Object.keys(root.raCatalogs).length > 0
+                      ? "Nenhum jogo da sua biblioteca está no RetroAchievements (o nome do arquivo precisa ser o nome original do jogo)."
+                      : "Procurando os jogos da sua biblioteca no RetroAchievements…"
                 color: "#b3ffffff"
                 font.family: "Roboto"
                 font.pixelSize: 16
@@ -1503,7 +1554,8 @@ FocusScope {
                 spacing: 12
 
                 Text {
-                    text: root.current ? (root.current.sysName + "  ·  " + L.formatLastPlayed(root.current.lastPlayed)).toUpperCase() : ""
+                    text: root.current ? (root.current.sysName + "  ·  " + L.formatLastPlayed(root.current.lastPlayed)
+                                          + (root.current.emuFull ? "  ·  " + root.current.emuFull : "")).toUpperCase() : ""
                     color: "#8cffffff"
                     font.family: "Roboto"
                     font.pixelSize: 12
