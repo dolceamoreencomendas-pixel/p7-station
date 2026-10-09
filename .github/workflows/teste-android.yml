@@ -103,6 +103,6 @@ jobs:
           gh release create "teste-${{ github.run_number }}" --prerelease \
             --title "Teste ${{ github.run_number }} (Android virtual)" \
             --notes "Prints e registros do teste automático. Não é para instalar." \
-            prints.zip resultado/*.png resultado/*.txt emus/*.txt
+            prints.zip resultado/*.png resultado/*.txt resultado/*.mp4 emus/*.txt
         env:
           GH_TOKEN: ${{ github.token }}

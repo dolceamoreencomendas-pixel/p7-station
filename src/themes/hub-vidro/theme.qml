@@ -177,6 +177,7 @@ FocusScope {
         introFallback.stop();
         introWanted = false;
         introOn = true;
+        console.warn("P7: abertura começou");
         if (P7.introDone) P7.introDone();
         introAnim.restart();
         if (soundOn) sBoot.play();
@@ -1988,6 +1989,7 @@ FocusScope {
                 mipmap: true
                 opacity: intro.logo * intro.fade
                 scale: 0.86 + 0.14 * intro.logo
+                onStatusChanged: console.warn("P7: ícone da abertura: " + status + " " + source)
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter

@@ -70,8 +70,13 @@ start_app
 shot 01-pede-permissao 6
 adb shell appops set --uid "$PKG" MANAGE_EXTERNAL_STORAGE allow
 key KEYCODE_BACK
-# abertura animada (só na primeira vez desde que o app abriu)
-for i in 1 2 3 4 5 6 7 8 9 10; do shot 02a-abertura-$i 0.6; done
+# abertura animada (só na primeira vez desde que o app abriu): grava 9 s de vídeo da tela
+adb shell screenrecord --time-limit 9 --bit-rate 8000000 /sdcard/abertura.mp4
+adb pull /sdcard/abertura.mp4 "$OUT/abertura.mp4"
+adb logcat -d | grep -E "P7|qml" > "$OUT/log-abertura.txt"
+if command -v ffmpeg >/dev/null; then
+    ffmpeg -loglevel error -i "$OUT/abertura.mp4" -vf "fps=4,scale=640:-1,tile=4x9" -frames:v 1 "$OUT/02a-abertura-quadros.png"
+fi
 shot 02-abriu 18
 adb shell cat /sdcard/Android/data/$PKG/files/P7Station/biblioteca/metadata.pegasus.txt > "$OUT/metadata-gerado.txt" 2>&1
 shot 03-inicio 5
