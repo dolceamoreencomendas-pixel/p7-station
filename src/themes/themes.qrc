@@ -10,6 +10,7 @@
         <file>hub-vidro/emulators.js</file>
         <file>hub-vidro/ConsolesPanel.qml</file>
         <file>hub-vidro/config.js</file>
+        <file>hub-vidro/p7-icon.png</file>
         <file>hub-vidro/sounds/move.wav</file>
         <file>hub-vidro/sounds/tab.wav</file>
         <file>hub-vidro/sounds/confirm.wav</file>

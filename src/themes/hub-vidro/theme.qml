@@ -1980,7 +1980,7 @@ FocusScope {
             }
             Image {
                 id: introLogo
-                source: "qrc:/frontend/assets/p7-icon.png"
+                source: "p7-icon.png"
                 width: 200; height: 200
                 anchors.centerIn: parent
                 anchors.verticalCenterOffset: -40
