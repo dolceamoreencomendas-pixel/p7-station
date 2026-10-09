@@ -58,6 +58,10 @@ mk "Nintendo 64/Super Mario 64 (USA).z64"
 mk "gba/Pokemon - Emerald Version (USA, Europe).gba"
 # PS2 sem o NetherSX2 instalado: o app tem que avisar antes de tentar abrir
 mk "ps2/God of War II (USA).iso"
+# Switch: capa pela eShop (um com o ID no nome do arquivo, outro só com o título)
+adb shell mkdir -p /sdcard/ROMs/switch
+mk "switch/Super Mario Odyssey [0100000000010000][v0].nsp"
+mk "switch/Mario Kart 8 Deluxe.xci"
 
 # toque longo num ponto da tela (em pixels da tela do Android virtual)
 hold_touch() { adb shell input swipe "$1" "$2" "$1" "$2" "$3"; sleep 1.5; }

@@ -223,6 +223,9 @@ FocusScope {
         var base = L.baseName(file ? file.path : "");
         var assets = g.assets;
         var art = assets.boxFront || assets.poster || assets.tile || L.thumbUrl(sys, base, "box");
+        // Switch não tem capas no Libretro: usa a imagem da eShop (pelo ID no nome do arquivo ou pelo título)
+        if (!art && sys === "switch" && typeof P7 !== "undefined" && P7.switchCover)
+            art = P7.switchCover(g.title, file ? file.path : "");
         var bg = assets.background || assets.screenshot || L.thumbUrl(sys, base, "snap") || art;
         // emulador que vai abrir este jogo, e se ele está instalado (sem lista de apps = não dá para saber)
         var sysDef = EM.byKey(sys);

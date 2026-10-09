@@ -8,6 +8,7 @@
         <file>hub-vidro/LiquidPill.qml</file>
         <file>hub-vidro/logic.js</file>
         <file>hub-vidro/emulators.js</file>
+        <file>hub-vidro/switch-capas.tsv</file>
         <file>hub-vidro/ConsolesPanel.qml</file>
         <file>hub-vidro/config.js</file>
         <file>hub-vidro/p7-icon.png</file>

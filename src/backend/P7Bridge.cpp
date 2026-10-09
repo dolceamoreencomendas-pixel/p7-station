@@ -10,6 +10,9 @@
 #include <QSaveFile>
 #include <QTextStream>
 #include <QVariantMap>
+#include <QHash>
+#include <QRegularExpression>
+#include <vector>
 
 #ifdef Q_OS_ANDROID
 #include "platform/AndroidHelpers.h"
@@ -144,4 +147,106 @@ bool P7Bridge::introPending() const
 void P7Bridge::introDone()
 {
     g_intro_shown = true;
+}
+
+// ---------------------------------------------------------------- capas de Switch
+// Índice gerado por tools/capas-switch/gerar_indice.py (nome normalizado, ID, código do ícone).
+namespace {
+struct SwitchIndex {
+    QHash<QString, QString> by_name;
+    QHash<QString, QString> by_id;
+    std::vector<std::pair<QString, QString>> names;   // para a busca aproximada
+    bool loaded = false;
+};
+
+SwitchIndex& switch_index()
+{
+    static SwitchIndex idx;
+    if (idx.loaded)
+        return idx;
+    idx.loaded = true;
+    QFile file(QStringLiteral(":/themes/hub-vidro/switch-capas.tsv"));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return idx;
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.isEmpty() || line.startsWith(QChar('#')))
+            continue;
+        const QStringList f = line.split(QChar('\t'));
+        if (f.size() < 3)
+            continue;
+        if (!idx.by_name.contains(f.at(0))) {
+            idx.by_name.insert(f.at(0), f.at(2));
+            idx.names.emplace_back(f.at(0), f.at(2));
+        }
+        idx.by_id.insert(f.at(1), f.at(2));
+    }
+    return idx;
+}
+
+// igual a normalize() de tools/capas-switch/gerar_indice.py
+QString normalize_title(const QString& title)
+{
+    QString t = title.normalized(QString::NormalizationForm_D);
+    QString out;
+    out.reserve(t.size());
+    for (const QChar c : t) {
+        if (c.category() == QChar::Mark_NonSpacing)
+            continue;
+        out.append(c);
+    }
+    out = out.toLower();
+    out.remove(QChar(0x2122)).remove(QChar(0x00AE)).remove(QChar(0x00A9));
+    static const QRegularExpression brackets(QStringLiteral("[\\(\\[][^\\)\\]]*[\\)\\]]"));
+    out.remove(brackets);
+    out.replace(QChar('&'), QStringLiteral(" and "));
+    static const QRegularExpression the_word(QStringLiteral("\\bthe\\b"));
+    out.remove(the_word);
+    static const QRegularExpression non_alnum(QStringLiteral("[^a-z0-9]+"));
+    out.remove(non_alnum);
+    return out;
+}
+
+QString eshop_url(const QString& code)
+{
+    return QStringLiteral("https://img-eshop.cdn.nintendo.net/i/") + code + QStringLiteral(".jpg");
+}
+} // namespace
+
+QString P7Bridge::switchCover(const QString& title, const QString& filePath) const
+{
+    const SwitchIndex& idx = switch_index();
+    if (idx.by_name.isEmpty())
+        return QString();
+
+    // 1) ID do jogo no nome do arquivo: "Jogo [0100ABCD12340000][v0].nsp" (atualização/DLC -> jogo base)
+    static const QRegularExpression id_re(QStringLiteral("\\b(01[0-9A-Fa-f]{14})\\b"));
+    const QRegularExpressionMatch m = id_re.match(QFileInfo(filePath).fileName());
+    if (m.hasMatch()) {
+        const QString base = m.captured(1).toUpper().left(13) + QStringLiteral("000");
+        const auto it = idx.by_id.constFind(base);
+        if (it != idx.by_id.cend())
+            return eshop_url(it.value());
+    }
+
+    // 2) título igual
+    const QString key = normalize_title(title);
+    if (key.isEmpty())
+        return QString();
+    const auto it = idx.by_name.constFind(key);
+    if (it != idx.by_name.cend())
+        return eshop_url(it.value());
+
+    // 3) título contido no nome da eShop (ex.: "Zelda Tears of the Kingdom"), o mais curto que servir
+    if (key.size() < 6)
+        return QString();
+    const QString* best = nullptr;
+    int best_len = 0;
+    for (const auto& entry : idx.names) {
+        if (entry.first.contains(key) && (!best || entry.first.size() < best_len)) {
+            best = &entry.second;
+            best_len = entry.first.size();
+        }
+    }
+    return best ? eshop_url(*best) : QString();
 }
