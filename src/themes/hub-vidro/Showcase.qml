@@ -423,16 +423,17 @@ Item {
     component DockBody: Rectangle {
         radius: 28
         gradient: Gradient {
-            GradientStop { position: 0.0; color: "#2d2b45" }
-            GradientStop { position: 1.0; color: "#13111d" }
+            GradientStop { position: 0.0; color: "#4a4670" }
+            GradientStop { position: 0.55; color: "#2a2742" }
+            GradientStop { position: 1.0; color: "#17152a" }
         }
         border.width: 1
-        border.color: "#29ffffff"
+        border.color: "#4dffffff"
         Rectangle {
             anchors.top: parent.top; anchors.topMargin: 1
             anchors.horizontalCenter: parent.horizontalCenter
             width: parent.width - parent.radius * 2; height: 1
-            color: "#4dffffff"
+            color: "#8cffffff"
         }
         Text {
             x: 24
