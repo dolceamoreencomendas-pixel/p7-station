@@ -66,8 +66,9 @@ shot 02-abriu 25
 adb shell cat /sdcard/Android/data/$PKG/files/P7Station/biblioteca/metadata.pegasus.txt > "$OUT/metadata-gerado.txt" 2>&1
 shot 03-inicio 5
 # parado no menu por 22 s: o registro mostra quantos quadros o app desenhou a cada 10 s
-sleep 22
+sleep 32
 shot 03b-parado 1
+adb logcat -d | grep -E "P7: quadros" > "$OUT/quadros-parado-no-inicio.txt"
 # segurar Triângulo (favoritar) deve marcar uma vez só, sem ficar piscando
 adb shell input keyevent --longpress KEYCODE_F
 shot 03c-segurou-triangulo 2
@@ -122,6 +123,9 @@ shot 15-voltou 8
 key KEYCODE_DPAD_RIGHT
 key KEYCODE_DPAD_RIGHT
 shot 16-navegou-depois-de-voltar 2
+# parado de novo depois de voltar do jogo
+sleep 32
+adb logcat -d | grep -E "P7: quadros" > "$OUT/quadros-parado-depois-do-jogo.txt"
 
 # ---------------------------------------------------------------- registros
 adb logcat -d > "$OUT/logcat-completo.txt"
