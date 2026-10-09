@@ -271,6 +271,8 @@ Item {
                 tint: show.entry ? show.entry.color : "#5a5f6b"
                 darkDisc: show.entry !== null && show.entry.sys === "psx"
                 pixelRatio: show.pixelRatio
+                // o giro do disco não pode ficar torto quando a mídia vira cartucho ou cartão
+                onKindChanged: if (kind !== "disc") rotation = 0
                 NumberAnimation on rotation {
                     from: 0; to: 360; duration: 18000; loops: Animation.Infinite
                     running: media.kind === "disc" && show.visible

@@ -1051,6 +1051,14 @@ FocusScope {
                 opacity: 0.55
             }
 
+            // Biblioteca e Troféus: fundo mais escuro (muitas capas e textos por cima)
+            Rectangle {
+                anchors.fill: parent
+                color: "#05040b"
+                opacity: root.tab === 0 ? 0 : 0.42
+                Behavior on opacity { NumberAnimation { duration: 400 } }
+            }
+
             // cor do console por cima, mais forte no alto à direita (atrás da vitrine)
             RadialGradient {
                 anchors.fill: parent
@@ -1673,8 +1681,9 @@ FocusScope {
                 currentIndex: root.libShelf
                 highlightMoveDuration: 380
                 highlightRangeMode: ListView.ApplyRange
+                // a prateleira escolhida fica no alto (a de baixo aparece pela metade, convidando a descer)
                 preferredHighlightBegin: 0
-                preferredHighlightEnd: height - 8
+                preferredHighlightEnd: 266
                 boundsBehavior: Flickable.StopAtBounds
                 cacheBuffer: 600
 
@@ -1754,7 +1763,7 @@ FocusScope {
                                 baseSize: 150
                                 selScale: 1.1
                                 lift: 12
-                                dimOpacity: shelf.isCur ? 0.8 : 0.62
+                                dimOpacity: shelf.isCur ? 0.9 : 0.7
                                 selected: shelf.isCur && index === root.libCol && !root.libOnSort && root.tab === 1
                                 pixelRatio: root.pixelRatio
                                 onTapped: {

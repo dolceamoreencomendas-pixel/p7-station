@@ -65,9 +65,9 @@ mk "switch/Mario Kart 8 Deluxe.xci"
 
 # toque longo num ponto da tela (em pixels da tela do Android virtual)
 hold_touch() { adb shell input swipe "$1" "$2" "$1" "$2" "$3"; sleep 1.5; }
-# engrenagem: x = 1361 e y = 55 no desenho de 1440 de largura
+# engrenagem: x = 1357 e y = 58 no desenho de 1440 de largura
 W=$(adb shell wm size | grep -oE "[0-9]+x[0-9]+" | tail -1 | cut -dx -f1)
-GX=$(( W * 1361 / 1440 )); GY=$(( W * 55 / 1440 ))
+GX=$(( W * 1357 / 1440 )); GY=$(( W * 58 / 1440 ))
 
 # ---------------------------------------------------------------- P7 Station
 start_app
@@ -124,25 +124,43 @@ key KEYCODE_ESCAPE
 key KEYCODE_ESCAPE
 shot 11-fechou-consoles 8
 
-# Biblioteca
+# Biblioteca em prateleiras: Switch, PSP, PS2, PS1, GBA, N64, Super Nintendo
 key KEYCODE_E
 shot 12-biblioteca 4
-# PS2 sem emulador: aviso na tela do jogo e, ao apertar X, a explicação (sem tentar abrir)
-key KEYCODE_DPAD_RIGHT
-key KEYCODE_DPAD_RIGHT
-key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_DOWN
+shot 12a-biblioteca-psp 2
+# PS2 sem emulador: aviso na barra do jogo e, ao apertar X, a explicação (sem tentar abrir)
+key KEYCODE_DPAD_DOWN
 shot 12b-jogo-sem-emulador 2
 key KEYCODE_ENTER
 shot 12c-aviso-falta-emulador 2
 key KEYCODE_ENTER
+# página do jogo (Quadrado)
+key KEYCODE_I
+shot 12d-pagina-do-jogo 2
+key KEYCODE_ESCAPE
+# Troféus (sem conta: explica como conectar)
+key KEYCODE_E
+shot 12e-trofeus 3
+key KEYCODE_Q
 key KEYCODE_Q
 sleep 2
+shot 12f-inicio-antes-de-jogar 1
 
 # ---------------------------------------------------------------- abrir o jogo de teste
+# grava a animação da mídia entrando na base e o "Abrindo..."
 adb logcat -c
+adb shell screenrecord --time-limit 8 --bit-rate 8000000 /sdcard/jogar.mp4 &
+REC=$!
+sleep 1
 key KEYCODE_ENTER
-shot 13-abrindo-jogo 12
-shot 14-jogo-rodando 6
+shot 13-abrindo-jogo 11
+wait $REC
+adb pull /sdcard/jogar.mp4 "$OUT/jogar.mp4"
+if command -v ffmpeg >/dev/null; then
+    ffmpeg -loglevel error -i "$OUT/jogar.mp4" -vf "fps=6,scale=640:-1,tile=6x8" -frames:v 1 "$OUT/13a-jogar-quadros.png"
+fi
+shot 14-jogo-rodando 4
 top_activity > "$OUT/tela-ativa-no-jogo.txt"
 adb logcat -d > "$OUT/logcat-jogo.txt"
 grep -iE "P7:|RetroArch|libretro|snes9x|ActivityManager: (START|Displayed)|ActivityTaskManager: (START|Displayed)" "$OUT/logcat-jogo.txt" | head -200 > "$OUT/log-jogo-resumo.txt"
