@@ -15,6 +15,10 @@
         <file>hub-vidro/sounds/confirm.wav</file>
         <file>hub-vidro/sounds/back.wav</file>
         <file>hub-vidro/sounds/launch.wav</file>
+        <file>hub-vidro/sounds/notice.wav</file>
+        <file>hub-vidro/sounds/pad-on.wav</file>
+        <file>hub-vidro/sounds/pad-off.wav</file>
+        <file>hub-vidro/sounds/boot.wav</file>
         <file>pegasus-theme-grid/theme.cfg</file>
         <file>pegasus-theme-grid/theme.qml</file>
         <file>pegasus-theme-grid/layer_filter/CheckBox.qml</file>

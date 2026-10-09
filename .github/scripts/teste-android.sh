@@ -47,7 +47,7 @@ fi
 
 # ---------------------------------------------------------------- jogos
 # Pasta com nome livre, como a de quem já tem os jogos organizados: o app deve achar sozinho.
-adb shell mkdir -p "/sdcard/ROMs/Super\ Nintendo" /sdcard/ROMs/PS1 /sdcard/ROMs/psp "/sdcard/ROMs/Nintendo\ 64" /sdcard/ROMs/gba
+adb shell mkdir -p "/sdcard/ROMs/Super\ Nintendo" /sdcard/ROMs/PS1 /sdcard/ROMs/psp "/sdcard/ROMs/Nintendo\ 64" /sdcard/ROMs/gba /sdcard/ROMs/ps2
 adb push emus/teste.sfc "/sdcard/ROMs/Super Nintendo/000 Teste P7.sfc"
 mk() { adb shell "touch \"/sdcard/ROMs/$1\""; }
 mk "Super Nintendo/Super Mario World (USA).sfc"
@@ -56,13 +56,23 @@ mk "PS1/Crash Bandicoot (USA).chd"
 mk "psp/God of War - Chains of Olympus (USA).iso"
 mk "Nintendo 64/Super Mario 64 (USA).z64"
 mk "gba/Pokemon - Emerald Version (USA, Europe).gba"
+# PS2 sem o NetherSX2 instalado: o app tem que avisar antes de tentar abrir
+mk "ps2/God of War II (USA).iso"
+
+# toque longo num ponto da tela (em pixels da tela do Android virtual)
+hold_touch() { adb shell input swipe "$1" "$2" "$1" "$2" "$3"; sleep 1.5; }
+# engrenagem: x = 1361 e y = 55 no desenho de 1440 de largura
+W=$(adb shell wm size | grep -oE "[0-9]+x[0-9]+" | tail -1 | cut -dx -f1)
+GX=$(( W * 1361 / 1440 )); GY=$(( W * 55 / 1440 ))
 
 # ---------------------------------------------------------------- P7 Station
 start_app
 shot 01-pede-permissao 6
 adb shell appops set --uid "$PKG" MANAGE_EXTERNAL_STORAGE allow
 key KEYCODE_BACK
-shot 02-abriu 25
+# abertura animada (só na primeira vez desde que o app abriu)
+for i in 1 2 3 4 5 6; do shot 02a-abertura-$i 1; done
+shot 02-abriu 18
 adb shell cat /sdcard/Android/data/$PKG/files/P7Station/biblioteca/metadata.pegasus.txt > "$OUT/metadata-gerado.txt" 2>&1
 shot 03-inicio 5
 # parado no menu por 22 s: o registro mostra quantos quadros o app desenhou a cada 10 s
@@ -73,10 +83,15 @@ adb logcat -d | grep -E "P7: quadros" > "$OUT/quadros-parado-no-inicio.txt"
 adb shell input keyevent --longpress KEYCODE_F
 shot 03c-segurou-triangulo 2
 
-# Consoles e emuladores: engrenagem > primeiro item
-key KEYCODE_DPAD_UP
-key KEYCODE_ENTER
-shot 04-configuracoes 2
+# Options/Start com a trava para crianças: um toque só mostra o aviso
+key KEYCODE_F1
+shot 03d-options-toque-curto 0
+adb shell input gamepad keyevent KEYCODE_BUTTON_START; sleep 1.2
+shot 03e-start-do-controle 0
+sleep 3
+# segurar a engrenagem (toque longo de 1,7 s) abre as configurações
+hold_touch "$GX" "$GY" 1700
+shot 04-configuracoes 1
 key KEYCODE_ENTER
 shot 05-consoles 3
 key KEYCODE_DPAD_DOWN
@@ -103,6 +118,14 @@ shot 11-fechou-consoles 8
 # Biblioteca
 key KEYCODE_E
 shot 12-biblioteca 4
+# PS2 sem emulador: aviso na tela do jogo e, ao apertar X, a explicação (sem tentar abrir)
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_RIGHT
+shot 12b-jogo-sem-emulador 2
+key KEYCODE_ENTER
+shot 12c-aviso-falta-emulador 2
+key KEYCODE_ENTER
 key KEYCODE_Q
 sleep 2
 

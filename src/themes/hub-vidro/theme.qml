@@ -29,7 +29,13 @@ FocusScope {
     property int sortMode: 0                  // 0 A–Z · 1 Recentes · 2 Mais jogados
     property bool settingsOpen: false
     property bool gearFocused: false
-    property bool soundOn: true
+    // sons: 0 desligados · 1 baixo · 2 médio · 3 alto
+    property int soundLevel: 2
+    readonly property bool soundOn: soundLevel > 0
+    readonly property real soundGain: [0, 0.35, 0.65, 1.0][soundLevel]
+    readonly property var soundLevelNames: ["Desligados", "Baixo", "Médio", "Alto"]
+    // trava para crianças: configurações só abrem segurando o botão
+    property bool kidLock: true
 
     property var trophyList: []
     property int trophyIndex: 0
@@ -115,6 +121,7 @@ FocusScope {
         target: Internal.scanner
         function onRunningChanged() {
             if (!Internal.scanner.running) refreshLater.restart();
+            if (!Internal.scanner.running && root.introWanted) Qt.callLater(root.startIntro);
             if (!Internal.scanner.running && root.syncPending) {
                 var f = root.syncForce;
                 root.syncPending = false;
@@ -149,19 +156,50 @@ FocusScope {
     // --------------------------------------------------------------- sons
     // Sons próprios do P7 Station (sintetizados, sem amostras de terceiros).
     property bool quiet: true           // sem som durante o carregamento e as atualizações
-    SoundEffect { id: sMove;    source: "sounds/move.wav";    volume: 0.55 }
-    SoundEffect { id: sTab;     source: "sounds/tab.wav";     volume: 0.6 }
-    SoundEffect { id: sConfirm; source: "sounds/confirm.wav"; volume: 0.6 }
-    SoundEffect { id: sBack;    source: "sounds/back.wav";    volume: 0.6 }
-    SoundEffect { id: sLaunch;  source: "sounds/launch.wav";  volume: 0.7 }
-    function sfx(s) { if (!quiet && soundOn) s.play(); }
+    SoundEffect { id: sMove;    source: "sounds/move.wav";    volume: 0.55 * root.soundGain }
+    SoundEffect { id: sTab;     source: "sounds/tab.wav";     volume: 0.6 * root.soundGain }
+    SoundEffect { id: sConfirm; source: "sounds/confirm.wav"; volume: 0.6 * root.soundGain }
+    SoundEffect { id: sBack;    source: "sounds/back.wav";    volume: 0.6 * root.soundGain }
+    SoundEffect { id: sLaunch;  source: "sounds/launch.wav";  volume: 0.75 * root.soundGain }
+    SoundEffect { id: sNotice;  source: "sounds/notice.wav";  volume: 0.6 * root.soundGain }
+    SoundEffect { id: sPadOn;   source: "sounds/pad-on.wav";  volume: 0.6 * root.soundGain }
+    SoundEffect { id: sPadOff;  source: "sounds/pad-off.wav"; volume: 0.6 * root.soundGain }
+    SoundEffect { id: sBoot;    source: "sounds/boot.wav";    volume: 0.8 * root.soundGain }
+
+    // ------------------------------------------------------------ abertura
+    // Só na primeira vez desde que o app abriu (não depois de cada jogo); qualquer botão pula.
+    property bool introOn: false
+    property bool introWanted: false
+    function startIntro() {
+        if (!introWanted || Internal.scanner.running) return;
+        introWanted = false;
+        introOn = true;
+        introAnim.restart();
+        if (soundOn) sBoot.play();
+    }
+    function skipIntro() {
+        if (!introOn) return;
+        introAnim.stop();
+        introOutAnim.restart();
+    }
+    // segurando a seta, o clique de navegação toca no máximo a cada 70 ms (não vira zumbido)
+    property double lastMoveSound: 0
+    function sfx(s) {
+        if (quiet || !soundOn) return;
+        if (s === sMove) {
+            var now = Date.now();
+            if (now - lastMoveSound < 70) return;
+            lastMoveSound = now;
+        }
+        s.play();
+    }
     onHomeIndexChanged: sfx(sMove)
     onLibIndexChanged: sfx(sMove)
     onTrophyIndexChanged: sfx(sMove)
     onFilterIndexChanged: sfx(sMove)
     onLibOnFiltersChanged: sfx(sMove)
-    onAccountOpenChanged: sfx(accountOpen ? sConfirm : sBack)
-    onSettingsOpenChanged: sfx(settingsOpen ? sConfirm : sBack)
+    onAccountOpenChanged: { sfx(accountOpen ? sConfirm : sBack); bumpLayout(); }
+    onSettingsOpenChanged: { sfx(settingsOpen ? sConfirm : sBack); bumpLayout(); }
     onSortModeChanged: sfx(sTab)
     onGearFocusedChanged: sfx(sMove)
     Timer { id: unquiet; interval: 700; onTriggered: root.quiet = false }
@@ -181,7 +219,14 @@ FocusScope {
         var assets = g.assets;
         var art = assets.boxFront || assets.poster || assets.tile || L.thumbUrl(sys, base, "box");
         var bg = assets.background || assets.screenshot || L.thumbUrl(sys, base, "snap") || art;
+        // emulador que vai abrir este jogo, e se ele está instalado (sem lista de apps = não dá para saber)
+        var sysDef = EM.byKey(sys);
+        var known = Object.keys(p7Installed).length > 0;
+        var emu = sysDef ? EM.effectiveEmu(sysDef, p7Emus[sys], p7Installed) : null;
         return {
+            emuOk: !emu || !known || EM.isInstalled(emu, p7Installed),
+            emuName: emu ? emu.label : "",
+            emuHint: emu && known ? EM.setupHint(sysDef, emu, p7Installed) : "",
             game: g,
             title: g.title,
             display: L.cleanTitle(g.title),
@@ -261,11 +306,108 @@ FocusScope {
         refresh();
     }
 
-    function setSound(on) {
-        soundOn = on;
-        api.memory.set("soundOn", on);
-        if (on) sConfirm.play();
+    function setSoundLevel(l) {
+        soundLevel = (l + 4) % 4;
+        api.memory.set("soundLevel", soundLevel);
+        if (soundOn) sConfirm.play();
     }
+    function setKidLock(on) {
+        kidLock = on;
+        api.memory.set("kidLock", on);
+        sfx(on ? sConfirm : sBack);
+    }
+
+    // ------------------------------------------------- avisos rápidos (topo)
+    property string toastText: ""
+    property string toastShown: ""      // continua escrito enquanto o aviso sai de cena
+    function toast(t) { toastText = t; toastShown = t; toastTimer.restart(); }
+    Timer { id: toastTimer; interval: 3000; onTriggered: root.toastText = "" }
+
+    // ----------------------------------------------- aviso com botão (meio)
+    property bool noticeOpen: false
+    property string noticeTitle: ""
+    property string noticeText: ""
+    function showNotice(title, text) {
+        noticeTitle = title;
+        noticeText = text;
+        noticeOpen = true;
+        sfx(sNotice);
+    }
+
+    // ------------------------------------------------- abrir configurações
+    // Com a trava ligada, só abre segurando Options (ou X na engrenagem) por 1,2 s.
+    property int holdKey: 0
+    property real holdProgress: 0
+    function openSettings() {
+        holdKey = 0;
+        gearFocused = false;
+        settingsIndex = 0;
+        settingsOpen = true;
+    }
+    function requestSettings(key) {
+        if (!kidLock) { openSettings(); return; }
+        holdKey = key;
+        holdAnim.restart();
+    }
+    NumberAnimation {
+        id: holdAnim
+        target: root; property: "holdProgress"; from: 0; to: 1; duration: 1200
+        onFinished: if (root.holdProgress >= 0.999) { root.holdProgress = 0; root.openSettings(); }
+    }
+    function cancelHold() {
+        if (!holdAnim.running) return;
+        holdProgress = 0;
+        holdKey = 0;
+        holdAnim.stop();
+        toast("Segure o botão para abrir as configurações");
+    }
+
+    // ------------------------------------------------------------ controles
+    // Lista e bateria vêm do Android (InputDevice.getBatteryState). Sem dado real, só o ícone.
+    property var pads: []
+    property var padNames: ({})
+    property var padLowWarned: ({})
+    property bool padsReady: false
+    function refreshPads() {
+        if (typeof P7 === "undefined" || !P7.controllers) return;
+        var list = P7.controllers();
+        var names = {};
+        list.forEach(function (p) { names[p.name] = true; });
+        if (padsReady) {
+            Object.keys(names).forEach(function (n) {
+                if (!padNames[n]) { toast("Controle conectado: " + n); sfx(sPadOn); }
+            });
+            Object.keys(padNames).forEach(function (n) {
+                if (!names[n]) { toast("Controle desconectado"); sfx(sPadOff); }
+            });
+        }
+        list.forEach(function (p) {
+            if (p.hasBattery && p.level >= 0 && p.level <= 15 && !p.charging && !padLowWarned[p.name]) {
+                padLowWarned[p.name] = true;
+                toast("Bateria do controle fraca: " + p.level + "%");
+                sfx(sNotice);
+            }
+        });
+        padNames = names;
+        padsReady = true;
+        if (JSON.stringify(list) !== JSON.stringify(pads)) pads = list;
+    }
+    Timer {
+        interval: 15000; repeat: true; triggeredOnStart: true
+        running: Qt.application.state === Qt.ApplicationActive
+        onTriggered: root.refreshPads()
+    }
+    Timer { id: padCheck; interval: 700; onTriggered: root.refreshPads() }
+    Connections {
+        target: Internal.gamepad
+        function onConnected(deviceId) { padCheck.restart(); }
+        function onDisconnected(deviceId) { padCheck.restart(); }
+    }
+
+    // o palco avisa os painéis de vidro quando a disposição muda (eles se reposicionam e param)
+    function bumpLayout() { stage.layoutTick++; }
+    onTabChanged: bumpLayout()
+    onNoticeOpenChanged: bumpLayout()
 
     function rebuildTrophies() {
         var list = [];
@@ -343,13 +485,17 @@ FocusScope {
 
     function launchCurrent() {
         if (!current) return;
+        if (!current.emuOk) {
+            showNotice("Falta o emulador", current.emuHint || ("Instale o " + current.emuName + " para jogar " + current.sysName + "."));
+            return;
+        }
         api.memory.set("tab", tab);
         api.memory.set("homeKey", current.key);
         if (tab === 1) {
             api.memory.set("libKey", current.key);
             api.memory.set("filterKey", filters[filterIndex].key);
         }
-        if (soundOn) sLaunch.play();
+        sfx(sLaunch);
         launchGuardUntil = Date.now() + 2000;   // um X segurado não abre o jogo duas vezes
         current.game.launch();
     }
@@ -364,8 +510,15 @@ FocusScope {
     Component.onCompleted: {
         if (api.memory.has("tab")) tab = api.memory.get("tab");
         if (api.memory.has("sortMode")) sortMode = api.memory.get("sortMode");
-        if (api.memory.has("soundOn")) soundOn = api.memory.get("soundOn");
+        if (api.memory.has("soundLevel")) soundLevel = Number(api.memory.get("soundLevel"));
+        else if (api.memory.has("soundOn") && !api.memory.get("soundOn")) soundLevel = 0;
+        if (api.memory.has("kidLock")) kidLock = api.memory.get("kidLock") === true;
         p7Load();
+        if (typeof P7 !== "undefined" && P7.firstShowSinceStart && P7.firstShowSinceStart()) {
+            introWanted = true;
+            introOn = true;          // cobre o menu até a abertura começar
+            Qt.callLater(startIntro);
+        }
         syncLibrary();
         refresh();
         loadAchievements();
@@ -399,13 +552,18 @@ FocusScope {
             || api.keys.isDetails(event) || api.keys.isPrevPage(event) || api.keys.isNextPage(event);
     }
     function releaseAllKeys() { heldKeys = ({}); }
+    property double lastExitHint: 0
     Keys.onReleased: {
         if (event.isAutoRepeat) return;
+        if (holdKey !== 0 && event.key === holdKey) cancelHold();
         if (heldKeys[event.key]) delete heldKeys[event.key];
     }
     onActiveFocusChanged: releaseAllKeys()
 
     Keys.onPressed: {
+        if (introOn) { event.accepted = true; skipIntro(); return; }
+        // botão da trava sendo segurado: as repetições do Android não recomeçam a contagem
+        if (holdKey !== 0 && event.key === holdKey) { event.accepted = true; return; }
         if (isActionKey(event)) {
             var now = Date.now();
             var since = heldKeys[event.key];
@@ -415,6 +573,18 @@ FocusScope {
                 return;
             }
             heldKeys[event.key] = now;
+        }
+        if (noticeOpen) {
+            if (api.keys.isAccept(event) || api.keys.isCancel(event)) { noticeOpen = false; sfx(sBack); }
+            event.accepted = true;
+            return;
+        }
+        // Options/Start: configurações do P7 (nunca o menu técnico do Pegasus)
+        if (api.keys.isMenu(event)) {
+            event.accepted = true;
+            if (settingsOpen) settingsOpen = false;
+            else if (!consoles.open && !accountOpen) requestSettings(event.key);
+            return;
         }
         if (consoles.open) { consoles.handleKey(event); return; }
         if (settingsOpen) { handleSettingsKey(event); return; }
@@ -430,7 +600,7 @@ FocusScope {
         if (tab === 0) {
             if (gearFocused) {
                 if (event.key === Qt.Key_Down || api.keys.isCancel(event)) { event.accepted = true; gearFocused = false; }
-                else if (api.keys.isAccept(event)) { event.accepted = true; gearFocused = false; settingsOpen = true; settingsIndex = 0; }
+                else if (api.keys.isAccept(event)) { event.accepted = true; requestSettings(event.key); }
                 else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Up) { event.accepted = true; }
                 return;
             }
@@ -439,8 +609,12 @@ FocusScope {
             else if (event.key === Qt.Key_Up) { event.accepted = true; gearFocused = true; }
             else if (event.key === Qt.Key_Down) { event.accepted = true; }
             else if (api.keys.isAccept(event)) { event.accepted = true; if (current) launchCurrent(); else consoles.show(); }
-            // Círculo no Início não faz nada (o menu do sistema fica no botão Options)
-            else if (api.keys.isCancel(event)) { event.accepted = true; }
+            // Círculo no Início não fecha o app; só lembra como sair
+            else if (api.keys.isCancel(event)) {
+                event.accepted = true;
+                var t = Date.now();
+                if (t - lastExitHint > 8000) { lastExitHint = t; toast("Para sair do P7 Station, use o botão de início do tablet"); }
+            }
             return;
         }
 
@@ -477,18 +651,21 @@ FocusScope {
     }
 
     property int settingsIndex: 0
-    readonly property int settingsCount: 5
+    readonly property int settingsCount: 6
     function settingsActivate(i) {
         if (i === 0) { settingsOpen = false; consoles.show(); }
         else if (i === 1) { settingsOpen = false; accountOpen = true; }
-        else if (i === 2) setSound(!soundOn);
-        else if (i === 3) { settingsOpen = false; syncLibrary(true); }
-        else if (i === 4) settingsOpen = false;
+        else if (i === 2) setSoundLevel(soundLevel + 1);
+        else if (i === 3) setKidLock(!kidLock);
+        else if (i === 4) { settingsOpen = false; syncLibrary(true); }
+        else if (i === 5) settingsOpen = false;
     }
     function handleSettingsKey(event) {
         if (api.keys.isCancel(event)) { event.accepted = true; settingsOpen = false; return; }
         if (event.key === Qt.Key_Up)   { event.accepted = true; settingsIndex = L.clampIndex(settingsIndex - 1, settingsCount); sfx(sMove); return; }
         if (event.key === Qt.Key_Down) { event.accepted = true; settingsIndex = L.clampIndex(settingsIndex + 1, settingsCount); sfx(sMove); return; }
+        if (settingsIndex === 2 && event.key === Qt.Key_Left)  { event.accepted = true; setSoundLevel(soundLevel - 1); return; }
+        if (settingsIndex === 2 && event.key === Qt.Key_Right) { event.accepted = true; setSoundLevel(soundLevel + 1); return; }
         if (api.keys.isAccept(event))  { event.accepted = true; settingsActivate(settingsIndex); return; }
         event.accepted = true;
     }
@@ -510,6 +687,9 @@ FocusScope {
 
     Item {
         id: stage
+        property int layoutTick: 0
+        onWidthChanged: layoutTick++
+        onHeightChanged: layoutTick++
         width: 1440
         height: root.height / root.ui
         scale: root.ui
@@ -658,7 +838,7 @@ FocusScope {
             text: "L1  ·  R1"
             color: "#59ffffff"
             font.family: "Roboto"
-            font.pixelSize: 12
+            font.pixelSize: 14
             font.letterSpacing: 1
         }
 
@@ -667,6 +847,66 @@ FocusScope {
             anchors.rightMargin: 56
             anchors.verticalCenter: tabBar.verticalCenter
             spacing: 18
+
+            // controles conectados e bateria (só o que o Android informa)
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 16
+                visible: root.pads.length > 0
+                Repeater {
+                    model: root.pads.slice(0, 2)
+                    delegate: Row {
+                        spacing: 7
+                        readonly property bool low: modelData.hasBattery && modelData.level <= 15 && !modelData.charging
+                        Canvas {
+                            width: 28; height: 18
+                            anchors.verticalCenter: parent.verticalCenter
+                            onPaint: {
+                                var c = getContext("2d");
+                                c.reset();
+                                c.strokeStyle = "rgba(255,255,255,0.8)";
+                                c.lineWidth = 1.6;
+                                c.beginPath();
+                                c.moveTo(7, 2); c.lineTo(21, 2);
+                                c.bezierCurveTo(27, 2, 28, 14, 25, 16);
+                                c.bezierCurveTo(22, 18, 19, 12, 17, 11);
+                                c.lineTo(11, 11);
+                                c.bezierCurveTo(9, 12, 6, 18, 3, 16);
+                                c.bezierCurveTo(0, 14, 1, 2, 7, 2);
+                                c.closePath();
+                                c.stroke();
+                            }
+                        }
+                        Item {
+                            visible: modelData.hasBattery
+                            width: 26; height: 13
+                            anchors.verticalCenter: parent.verticalCenter
+                            Rectangle {
+                                width: 23; height: 13; radius: 3
+                                color: "transparent"
+                                border.width: 1.4
+                                border.color: low ? "#ffb74d" : "#b3ffffff"
+                                Rectangle {
+                                    x: 2; y: 2
+                                    height: parent.height - 4
+                                    width: Math.max(1.5, (parent.width - 4) * Math.max(0, Math.min(100, modelData.level)) / 100)
+                                    radius: 1.5
+                                    color: low ? "#ffb74d" : (modelData.charging ? "#9be7a0" : "#e6ffffff")
+                                }
+                            }
+                            Rectangle { x: 23.5; y: 4; width: 2.2; height: 5; radius: 1; color: "#b3ffffff" }
+                        }
+                        Text {
+                            visible: modelData.hasBattery
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.level + "%" + (modelData.charging ? "  carregando" : "")
+                            color: low ? "#ffb74d" : "#b3ffffff"
+                            font.family: "Roboto"
+                            font.pixelSize: 15
+                        }
+                    }
+                }
+            }
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -683,7 +923,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 color: "#b3ffffff"
                 font.family: "Roboto"
-                font.pixelSize: 15
+                font.pixelSize: 18
                 font.letterSpacing: 0.5
             }
             Glass {
@@ -718,7 +958,30 @@ FocusScope {
                         ctx.stroke();
                     }
                 }
-                MouseArea { anchors.fill: parent; onClicked: { root.gearFocused = false; root.settingsIndex = 0; root.settingsOpen = true; } }
+                // anel que enche enquanto o botão (ou o dedo) segura
+                Canvas {
+                    id: holdRing
+                    anchors.fill: parent
+                    visible: root.holdProgress > 0
+                    property real p: root.holdProgress
+                    onPChanged: requestPaint()
+                    onPaint: {
+                        var ctx = getContext("2d");
+                        ctx.reset();
+                        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(width / 2, height / 2, width / 2 - 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p);
+                        ctx.stroke();
+                    }
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onPressed: if (root.kidLock) { root.holdKey = -1; holdAnim.restart(); }
+                    onReleased: if (root.kidLock && root.holdKey === -1) root.cancelHold()
+                    onCanceled: if (root.kidLock && root.holdKey === -1) root.cancelHold()
+                    onClicked: if (!root.kidLock) root.openSettings()
+                }
             }
         }
 
@@ -1252,6 +1515,13 @@ FocusScope {
                     elide: Text.ElideRight
                     lineHeight: 1.04
                 }
+                Text {
+                    visible: root.current !== null && !root.current.emuOk
+                    text: root.current ? "Falta instalar o " + root.current.emuName + " neste tablet" : ""
+                    color: "#ffcc80"
+                    font.family: "Roboto"
+                    font.pixelSize: 17
+                }
                 Item { width: 1; height: details.compact ? 4 : 10 }
                 Row {
                     spacing: 12
@@ -1285,7 +1555,8 @@ FocusScope {
                             }
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: root.current && L.playedTime(root.current) > 0 ? "Continuar" : "Jogar"
+                                text: root.current && !root.current.emuOk ? "Como jogar"
+                                    : (root.current && L.playedTime(root.current) > 0 ? "Continuar" : "Jogar")
                                 color: "#0b0c0f"
                                 font.family: "Roboto"
                                 font.pixelSize: 16
@@ -1413,7 +1684,8 @@ FocusScope {
                         model: [
                             { title: "Consoles e emuladores", detail: "Pastas dos jogos e emulador de cada console" },
                             { title: "Conta do RetroAchievements", detail: root.raState === "off" ? "Não conectada" : root.raUser() },
-                            { title: "Sons", detail: root.soundOn ? "Ligados" : "Desligados" },
+                            { title: "Sons", detail: "Volume: " + root.soundLevelNames[root.soundLevel] + "  ·  esquerda e direita mudam" },
+                            { title: "Trava para crianças", detail: root.kidLock ? "Ligada: segure Options para abrir as configurações" : "Desligada" },
                             { title: "Atualizar biblioteca", detail: "Procura jogos e emuladores novos" },
                             { title: "Fechar", detail: "" }
                         ]
@@ -1433,18 +1705,18 @@ FocusScope {
                             }
                             // chave liga/desliga dos sons
                             Rectangle {
-                                visible: index === 2
+                                visible: index === 3
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 52; height: 30; radius: 15
-                                color: root.soundOn ? "#e6ffffff" : "#26ffffff"
+                                color: root.kidLock ? "#e6ffffff" : "#26ffffff"
                                 Behavior on color { ColorAnimation { duration: 180 } }
                                 Rectangle {
                                     width: 24; height: 24; radius: 12
                                     y: 3
-                                    x: root.soundOn ? 25 : 3
-                                    color: root.soundOn ? "#0b0c0f" : "#ffffff"
+                                    x: root.kidLock ? 25 : 3
+                                    color: root.kidLock ? "#0b0c0f" : "#ffffff"
                                     Behavior on x { SpringAnimation { spring: 5; damping: 0.35 } }
                                 }
                             }
@@ -1461,7 +1733,7 @@ FocusScope {
                         leftPadding: 12
                         wrapMode: Text.WordWrap
                         color: "#73ffffff"; font.family: "Roboto"; font.pixelSize: 13; lineHeight: 1.35
-                        text: "Para abrir o P7 Station ao ligar o tablet: Configurações do Android › Apps › Apps padrão › Tela inicial.\nMenu do sistema: botão Options do controle."
+                        text: "Para abrir o P7 Station ao ligar o tablet: Configurações do Android › Apps › Apps padrão › Tela inicial.\nOptions (ou Start) abre esta tela; com a trava ligada, segure o botão."
                     }
                 }
             }
@@ -1550,7 +1822,44 @@ FocusScope {
             host: root
             backdrop: glassSource
             stageItem: stage
-            onFinished: { root.syncLibrary(); root.forceActiveFocus(); }
+            onFinished: { root.syncLibrary(); root.refresh(); root.forceActiveFocus(); }
+        }
+
+        // ---------------------------------------------------- aviso com botão
+        Rectangle {
+            anchors.fill: parent
+            visible: root.noticeOpen
+            color: "#b3050608"
+            MouseArea { anchors.fill: parent; onClicked: root.noticeOpen = false }
+            Glass {
+                backdrop: glassSource
+                stageItem: stage
+                anchors.centerIn: parent
+                width: 640
+                height: noticeCol.implicitHeight + 72
+                radius: 32
+                tint: "#38101018"
+                MouseArea { anchors.fill: parent }
+                Column {
+                    id: noticeCol
+                    x: 40; y: 36
+                    width: parent.width - 80
+                    spacing: 16
+                    Text { text: root.noticeTitle; color: "#ffffff"; font.family: "Roboto"; font.weight: Font.Light; font.pixelSize: 32 }
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        text: root.noticeText
+                        color: "#e6ffffff"; font.family: "Roboto"; font.pixelSize: 19; lineHeight: 1.35
+                    }
+                    Item { width: 1; height: 4 }
+                    Rectangle {
+                        width: 180; height: 52; radius: 26; color: "#ebffffff"
+                        Text { anchors.centerIn: parent; text: "Entendi"; color: "#0b0c0f"; font.family: "Roboto"; font.pixelSize: 18; font.weight: Font.DemiBold }
+                        MouseArea { anchors.fill: parent; onClicked: root.noticeOpen = false }
+                    }
+                }
+            }
         }
 
         // ---------------------------------------------------- rodapé
@@ -1574,13 +1883,14 @@ FocusScope {
                 delegate: Row {
                     spacing: 8
                     Canvas {
-                        width: 18
-                        height: 18
+                        width: 22
+                        height: 22
                         anchors.verticalCenter: parent.verticalCenter
                         visible: modelData.glyph !== "lr"
                         onPaint: {
                             var ctx = getContext("2d");
                             ctx.reset();
+                            ctx.scale(22 / 18, 22 / 18);
                             ctx.strokeStyle = "rgba(255,255,255,0.55)";
                             ctx.lineWidth = 1.3;
                             ctx.beginPath();
@@ -1606,17 +1916,110 @@ FocusScope {
                         text: "L1 R1"
                         color: "#8cffffff"
                         font.family: "Roboto"
-                        font.pixelSize: 11
+                        font.pixelSize: 13
                         font.weight: Font.Medium
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.label
-                        color: "#80ffffff"
+                        color: "#99ffffff"
                         font.family: "Roboto"
-                        font.pixelSize: 13
+                        font.pixelSize: 16
                     }
                 }
+            }
+        }
+
+        // ---------------------------------------------------- aviso rápido
+        Glass {
+            id: toastBox
+            backdrop: glassSource
+            stageItem: stage
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: root.toastText !== "" ? 30 : -80
+            Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            visible: y > -80
+            width: toastLabel.implicitWidth + 56
+            height: 52
+            radius: 26
+            tint: "#40101018"
+            Text {
+                id: toastLabel
+                anchors.centerIn: parent
+                text: root.toastShown
+                color: "#ffffff"
+                font.family: "Roboto"
+                font.pixelSize: 18
+            }
+        }
+            // ---------------------------------------------------- abertura
+        Item {
+            id: intro
+            anchors.fill: parent
+            visible: root.introOn
+            property real glow: 0
+            property real logo: 0
+            property real word: 0
+            property real fade: 1
+
+            Rectangle { anchors.fill: parent; color: "#050410"; opacity: intro.fade }
+            RadialGradient {
+                anchors.fill: parent
+                opacity: intro.glow * intro.fade
+                horizontalRadius: parent.width * (0.25 + 0.35 * intro.glow)
+                verticalRadius: horizontalRadius
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: "#5a3cff" }
+                    GradientStop { position: 0.45; color: "#1f1660" }
+                    GradientStop { position: 1.0; color: "transparent" }
+                }
+            }
+            Image {
+                id: introLogo
+                source: "qrc:/frontend/assets/p7-icon.png"
+                width: 200; height: 200
+                anchors.centerIn: parent
+                anchors.verticalCenterOffset: -40
+                smooth: true
+                mipmap: true
+                opacity: intro.logo * intro.fade
+                scale: 0.86 + 0.14 * intro.logo
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: introLogo.bottom
+                anchors.topMargin: 34
+                text: "P7  STATION"
+                color: "#ffffff"
+                font.family: "Roboto"
+                font.pixelSize: 26
+                font.weight: Font.Light
+                font.letterSpacing: 4 + 10 * intro.word
+                opacity: intro.word * intro.fade
+            }
+            MouseArea { anchors.fill: parent; onClicked: root.skipIntro() }
+
+            SequentialAnimation {
+                id: introAnim
+                PropertyAction { target: intro; property: "fade"; value: 1 }
+                ParallelAnimation {
+                    NumberAnimation { target: intro; property: "glow"; from: 0; to: 1; duration: 700; easing.type: Easing.OutCubic }
+                    SequentialAnimation {
+                        PauseAnimation { duration: 250 }
+                        NumberAnimation { target: intro; property: "logo"; from: 0; to: 1; duration: 650; easing.type: Easing.OutBack }
+                    }
+                    SequentialAnimation {
+                        PauseAnimation { duration: 550 }
+                        NumberAnimation { target: intro; property: "word"; from: 0; to: 1; duration: 700; easing.type: Easing.OutCubic }
+                    }
+                }
+                PauseAnimation { duration: 450 }
+                ScriptAction { script: introOutAnim.restart() }
+            }
+            SequentialAnimation {
+                id: introOutAnim
+                NumberAnimation { target: intro; property: "fade"; to: 0; duration: 420; easing.type: Easing.InOutQuad }
+                ScriptAction { script: { root.introOn = false; intro.glow = 0; intro.logo = 0; intro.word = 0; intro.fade = 1; } }
             }
         }
     }

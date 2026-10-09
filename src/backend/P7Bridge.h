@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QStringList>
+#include <QVariantList>
 
 
 class P7Bridge : public QObject {
@@ -23,4 +24,8 @@ public:
     Q_INVOKABLE QString libraryDir() const;
     // armazenamento interno (/storage/emulated/0)
     Q_INVOKABLE QString storageRoot() const;
+    // controles conectados: [{ name, hasBattery, level (0-100, -1 = sem dado), charging, full }]
+    Q_INVOKABLE QVariantList controllers() const;
+    // true só na primeira chamada desde que o app abriu (a abertura animada não repete depois de cada jogo)
+    Q_INVOKABLE bool firstShowSinceStart();
 };

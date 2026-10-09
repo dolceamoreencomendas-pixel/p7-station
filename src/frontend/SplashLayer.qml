@@ -33,8 +33,10 @@ Rectangle {
         anchors.bottom: parent.verticalCenter
         anchors.bottomMargin: vpx(10)
 
+        // só pulsa enquanto a tela de carregamento aparece (escondida, não pode pedir quadros)
         SequentialAnimation on scale {
             loops: Animation.Infinite
+            running: root.visible
             NumberAnimation { from: 1.0; to: 1.04; duration: 1400; easing.type: Easing.InOutSine }
             NumberAnimation { from: 1.04; to: 1.0; duration: 1400; easing.type: Easing.InOutSine }
         }

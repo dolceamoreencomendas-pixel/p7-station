@@ -33,10 +33,25 @@ Rectangle {
     onYChanged: updateArea()
     onWidthChanged: updateArea()
     onHeightChanged: updateArea()
-    onVisibleChanged: updateArea()
-    Component.onCompleted: updateArea()
-    // painéis que mudam de lugar junto com o pai (troca de aba) se reposicionam aqui
-    Timer { interval: 120; repeat: true; running: glass.visible && glass.liquid; onTriggered: glass.updateArea() }
+    onVisibleChanged: { updateArea(); if (visible) burst(); }
+    Component.onCompleted: { updateArea(); burst(); }
+    // Painéis que mudam de lugar junto com o pai (troca de aba, menu abrindo) se reposicionam
+    // por alguns instantes depois de cada mudança avisada pelo palco (layoutTick) e depois param:
+    // parado, nada aqui pede quadros novos.
+    readonly property int layoutTick: stageItem && stageItem.layoutTick !== undefined ? stageItem.layoutTick : 0
+    property int burstLeft: 0
+    function burst() { burstLeft = 10; trackTimer.restart(); }
+    onLayoutTickChanged: burst()
+    Timer {
+        id: trackTimer
+        interval: 90
+        repeat: true
+        onTriggered: {
+            glass.updateArea();
+            glass.burstLeft--;
+            if (glass.burstLeft <= 0 || !glass.visible) stop();
+        }
+    }
 
     ShaderEffect {
         id: fx

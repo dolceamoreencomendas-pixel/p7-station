@@ -216,6 +216,51 @@ public class MainActivity extends org.qtproject.qt5.android.bindings.QtActivity 
         return out.toString();
     }
 
+    // P7 Station: controles conectados, um por linha: nome \t tem bateria (1/0) \t carga 0..1 (ou -1) \t estado
+    // estado: 0 desconhecido, 2 carregando, 3 descarregando, 4 sem carregar, 5 cheio (BatteryState do Android 12+).
+    // A bateria só vem quando o próprio Android a informa (driver do controle); nada é estimado aqui.
+    public static String controllers() {
+        StringBuilder out = new StringBuilder();
+        try {
+            for (int id : android.view.InputDevice.getDeviceIds()) {
+                android.view.InputDevice dev = android.view.InputDevice.getDevice(id);
+                if (dev == null || dev.isVirtual())
+                    continue;
+                final int src = dev.getSources();
+                final boolean pad = (src & android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD
+                                 || (src & android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK;
+                if (!pad)
+                    continue;
+                boolean present = false;
+                float capacity = -1f;
+                int status = 0;
+                if (Build.VERSION.SDK_INT >= 31) {
+                    try {
+                        Object state = dev.getClass().getMethod("getBatteryState").invoke(dev);
+                        present = (Boolean) state.getClass().getMethod("isPresent").invoke(state);
+                        if (present) {
+                            float c = (Float) state.getClass().getMethod("getCapacity").invoke(state);
+                            capacity = Float.isNaN(c) ? -1f : c;
+                            status = (Integer) state.getClass().getMethod("getStatus").invoke(state);
+                        }
+                    }
+                    catch (Exception e) {
+                        android.util.Log.w("P7", "bateria do controle: " + e);
+                    }
+                }
+                out.append(dev.getName().replace('\t', ' ').replace('\n', ' '))
+                   .append('\t').append(present ? 1 : 0)
+                   .append('\t').append(capacity)
+                   .append('\t').append(status)
+                   .append('\n');
+            }
+        }
+        catch (Exception e) {
+            android.util.Log.w("P7", "controllers: " + e);
+        }
+        return out.toString();
+    }
+
     // P7 Station: endereços content:// do próprio app que vão para o emulador (no -d ou num extra)
     // entram no ClipData, para a permissão de leitura valer também para os extras.
     private static void grantOwnUris(Intent intent) {

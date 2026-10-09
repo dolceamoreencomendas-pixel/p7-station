@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QTextStream>
+#include <QVariantMap>
 
 #ifdef Q_OS_ANDROID
 #include "platform/AndroidHelpers.h"
@@ -105,4 +106,38 @@ QString P7Bridge::storageRoot() const
 #else
     return QDir::homePath();
 #endif
+}
+
+QVariantList P7Bridge::controllers() const
+{
+    QVariantList out;
+#ifdef Q_OS_ANDROID
+    const QAndroidJniObject result = QAndroidJniObject::callStaticObjectMethod(
+        android::jni_classname(), "controllers", "()Ljava/lang/String;");
+    const QStringList lines = result.toString().split(QChar('\n'), Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        const QStringList f = line.split(QChar('\t'));
+        if (f.size() < 4)
+            continue;
+        const bool present = f.at(1) == QLatin1String("1");
+        const double capacity = f.at(2).toDouble();
+        const int status = f.at(3).toInt();
+        QVariantMap pad;
+        pad.insert(QStringLiteral("name"), f.at(0));
+        pad.insert(QStringLiteral("hasBattery"), present && capacity >= 0.0);
+        pad.insert(QStringLiteral("level"), present && capacity >= 0.0 ? qRound(capacity * 100.0) : -1);
+        pad.insert(QStringLiteral("charging"), present && status == 2);
+        pad.insert(QStringLiteral("full"), present && status == 5);
+        out << pad;
+    }
+#endif
+    return out;
+}
+
+bool P7Bridge::firstShowSinceStart()
+{
+    static bool shown = false;
+    const bool first = !shown;
+    shown = true;
+    return first;
 }
