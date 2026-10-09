@@ -21,6 +21,7 @@ SOURCES += \
     Paths.cpp \
     AppSettings.cpp \
     Log.cpp \
+    P7Bridge.cpp \
 
 HEADERS += \
     Backend.h \
@@ -32,6 +33,7 @@ HEADERS += \
     Paths.h \
     AppSettings.h \
     Log.h \
+    P7Bridge.h \
 
 include(imggen/imggen.pri)
 include(model/model.pri)

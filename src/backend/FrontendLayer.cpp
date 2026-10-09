@@ -16,6 +16,7 @@
 
 
 #include "FrontendLayer.h"
+#include "P7Bridge.h"
 
 #include "Paths.h"
 #include "imggen/BlurhashProvider.h"
@@ -71,6 +72,8 @@ void FrontendLayer::rebuild()
     m_engine->rootContext()->setContextProperty(QStringLiteral("api"), m_api_public);
     m_engine->rootContext()->setContextProperty(QStringLiteral("Api"), m_api_public);
     m_engine->rootContext()->setContextProperty(QStringLiteral("Internal"), m_api_private);
+    static P7Bridge* p7_bridge = new P7Bridge(this);
+    m_engine->rootContext()->setContextProperty(QStringLiteral("P7"), p7_bridge);
     m_engine->load(QUrl(QStringLiteral("qrc:/frontend/main.qml")));
 
     emit rebuildComplete();

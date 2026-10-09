@@ -7,6 +7,8 @@
         <file>hub-vidro/Showcase.qml</file>
         <file>hub-vidro/LiquidPill.qml</file>
         <file>hub-vidro/logic.js</file>
+        <file>hub-vidro/emulators.js</file>
+        <file>hub-vidro/ConsolesPanel.qml</file>
         <file>hub-vidro/config.js</file>
         <file>hub-vidro/sounds/move.wav</file>
         <file>hub-vidro/sounds/tab.wav</file>

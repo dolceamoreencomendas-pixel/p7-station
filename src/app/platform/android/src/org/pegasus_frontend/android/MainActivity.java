@@ -20,7 +20,10 @@ package org.pegasus_frontend.android;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.os.Bundle;
 import android.content.IntentFilter;
 import android.content.UriPermission;
 import android.content.pm.ApplicationInfo;
@@ -199,6 +202,48 @@ public class MainActivity extends org.qtproject.qt5.android.bindings.QtActivity 
 
 
     // P7 Station: só consulta, sem abrir a tela de configurações de novo
+    // P7 Station: pacotes instalados, um por linha (para achar os emuladores)
+    public static String installedPackages() {
+        StringBuilder out = new StringBuilder();
+        try {
+            List<PackageInfo> list = m_self.getPackageManager().getInstalledPackages(0);
+            for (PackageInfo info : list)
+                out.append(info.packageName).append('\n');
+        }
+        catch (Exception e) {
+            android.util.Log.w("P7", "installedPackages: " + e);
+        }
+        return out.toString();
+    }
+
+    // P7 Station: endereços content:// do próprio app que vão para o emulador (no -d ou num extra)
+    // entram no ClipData, para a permissão de leitura valer também para os extras.
+    private static void grantOwnUris(Intent intent) {
+        final String prefix = "content://" + m_self.getPackageName() + ".files/";
+        ClipData clip = null;
+        java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+        if (intent.getData() != null && intent.getData().toString().startsWith(prefix))
+            uris.add(intent.getData());
+        Bundle extras = intent.getExtras();
+        if (extras != null) {
+            for (String key : extras.keySet()) {
+                Object value = extras.get(key);
+                if (value instanceof String && ((String) value).startsWith(prefix))
+                    uris.add(Uri.parse((String) value));
+            }
+        }
+        for (Uri uri : uris) {
+            if (clip == null)
+                clip = ClipData.newRawUri("P7", uri);
+            else
+                clip.addItem(new ClipData.Item(uri));
+        }
+        if (clip != null) {
+            intent.setClipData(clip);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        }
+    }
+
     public static boolean hasAllStorageAccess() {
         if (Build.VERSION.SDK_INT < 30)
             return true;
@@ -253,6 +298,8 @@ public class MainActivity extends org.qtproject.qt5.android.bindings.QtActivity 
             Intent intent = IntentHelper.parseIntentCommand(args);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            grantOwnUris(intent);
+            android.util.Log.w("P7", "abrindo: " + intent.toUri(0));
             m_self.startActivity(intent);
         }
         catch (Exception e) {

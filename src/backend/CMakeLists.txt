@@ -14,6 +14,8 @@ add_library(pegasus-backend
     FrontendLayer.h
     Log.cpp
     Log.h
+    P7Bridge.cpp
+    P7Bridge.h
     Paths.cpp
     Paths.h
     PegasusAssets.cpp

@@ -1,16 +1,16 @@
 .pragma library
+.import "emulators.js" as EM
 
 // Funções puras do tema (sem dependência do Pegasus), para poderem ser testadas fora dele.
 
-var SYSTEMS = {
-    snes:   { name: "Super Nintendo",  short: "SNES",   color: "#6d63b8", thumbs: "Nintendo - Super Nintendo Entertainment System", ra: [3] },
-    psx:    { name: "PlayStation",     short: "PS1",    color: "#5f6f8f", thumbs: "Sony - PlayStation",                            ra: [12] },
-    ps2:    { name: "PlayStation 2",   short: "PS2",    color: "#2f4fb0", thumbs: "Sony - PlayStation 2",                          ra: [21] },
-    wiiu:   { name: "Wii U",           short: "Wii U",  color: "#2a8fb0", thumbs: "Nintendo - Wii U",                              ra: [] },
-    switch: { name: "Nintendo Switch", short: "Switch", color: "#c0453e", thumbs: "",                                              ra: [] }
-};
+// Dados dos consoles vêm de emulators.js (uma só lista para o app inteiro).
+var SYSTEMS = {};
+EM.SYSTEMS.forEach(function (s) {
+    SYSTEMS[s.key] = { name: s.name, short: s.short, color: s.color, thumbs: s.thumbs, ra: s.ra, media: s.media };
+});
 
-var SYSTEM_ORDER = ["switch", "wiiu", "ps2", "psx", "snes"];
+// Ordem dos filtros da Biblioteca: do mais novo para o mais antigo
+var SYSTEM_ORDER = EM.SYSTEMS.map(function (s) { return s.key; }).reverse();
 
 function systemInfo(shortName) {
     var key = (shortName || "").toLowerCase();

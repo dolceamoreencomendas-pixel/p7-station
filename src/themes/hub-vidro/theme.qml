@@ -3,6 +3,7 @@ import QtGraphicalEffects 1.12
 import QtMultimedia 5.8
 import "logic.js" as L
 import "config.js" as Cfg
+import "emulators.js" as EM
 
 // Hub Vidro — tema do Pegasus para o Xiaomi Pad 7 com controle.
 // Abas: Início (recentes + Continuar), Biblioteca (por console ou A–Z), Troféus (RetroAchievements).
@@ -45,6 +46,92 @@ FocusScope {
         if (tab === 1) return libraryList.length ? libraryList[L.clampIndex(libIndex, libraryList.length)] : null;
         return trophyList.length ? trophyList[L.clampIndex(trophyIndex, trophyList.length)].entry : null;
     }
+
+    // ------------------------------------------------- consoles e emuladores
+    // Escolhas guardadas no api.memory; o arquivo do Pegasus é gerado a partir delas.
+    property var p7Installed: ({})
+    property var p7Folders: ({})       // pasta usada de cada console
+    property var p7Overrides: ({})     // pasta escolhida à mão ("-" = console desligado)
+    property var p7Emus: ({})          // emulador escolhido por console
+    property string p7Root: ""         // pasta principal escolhida (vazio = automático)
+    property var p7Roots: []           // pastas onde a procura automática olhou
+    property string p7Storage: ""
+
+    function readJson(key) {
+        if (!api.memory.has(key)) return {};
+        try { var v = JSON.parse(String(api.memory.get(key))); return v && typeof v === "object" ? v : {}; }
+        catch (e) { return {}; }
+    }
+    function p7Load() {
+        p7Overrides = readJson("p7Overrides");
+        p7Emus = readJson("p7Emus");
+        p7Root = api.memory.has("p7Root") ? String(api.memory.get("p7Root")) : "";
+    }
+    function p7Save() {
+        api.memory.set("p7Overrides", JSON.stringify(p7Overrides));
+        api.memory.set("p7Emus", JSON.stringify(p7Emus));
+        api.memory.set("p7Root", p7Root);
+    }
+    function p7Detect() {
+        if (typeof P7 === "undefined") return;
+        p7Storage = P7.storageRoot();
+        p7Installed = EM.toSet(P7.installedPackages());
+        var ls = function (p) { return P7.subdirs(p); };
+        var roots = p7Root ? [p7Root] : EM.candidateRoots(p7Storage, ls);
+        p7Roots = roots;
+        var found = EM.detectFolders(roots, ls);
+        var out = {};
+        EM.SYSTEMS.forEach(function (s) {
+            var o = p7Overrides[s.key];
+            if (o === "-") return;
+            var dir = o ? o : found[s.key];
+            if (dir && P7.isDir(dir)) out[s.key] = dir;
+        });
+        p7Folders = out;
+    }
+    // Refaz o arquivo de consoles do Pegasus; só recarrega a biblioteca se algo mudou
+    // (ou se pedirem). Nunca durante uma leitura em andamento: espera ela terminar.
+    property bool syncPending: false
+    property bool syncForce: false
+    function syncLibrary(force) {
+        if (typeof P7 === "undefined") return;
+        if (Internal.scanner.running) {
+            syncPending = true;
+            syncForce = syncForce || force === true;
+            return;
+        }
+        p7Detect();
+        var text = EM.buildMetadata(p7Folders, p7Emus, p7Installed);
+        var path = P7.libraryDir() + "/metadata.pegasus.txt";
+        var changed = P7.readText(path) !== text;
+        if (changed && !P7.writeText(path, text)) console.warn("P7: não consegui gravar " + path);
+        if (changed || force === true) {
+            console.warn("P7: recarregando a biblioteca (" + Object.keys(p7Folders).join(", ") + ")");
+            Internal.settings.reloadProviders();
+        }
+    }
+    Connections {
+        target: Internal.scanner
+        function onRunningChanged() {
+            if (!Internal.scanner.running) refreshLater.restart();
+            if (!Internal.scanner.running && root.syncPending) {
+                var f = root.syncForce;
+                root.syncPending = false;
+                root.syncForce = false;
+                root.syncLibrary(f);
+            }
+        }
+    }
+    // a lista de jogos muda depois de uma leitura nova da biblioteca
+    Timer { id: refreshLater; interval: 150; onTriggered: { root.quiet = true; root.refresh(); unquiet.restart(); } }
+    Connections {
+        target: api.allGames
+        function onCountChanged() { refreshLater.restart(); }
+    }
+
+    function playMove()    { sfx(sMove); }
+    function playConfirm() { sfx(sConfirm); }
+    function playBack()    { sfx(sBack); }
 
     // --------------------------------------------------------------- sons
     // Sons próprios do P7 Station (sintetizados, sem amostras de terceiros).
@@ -264,6 +351,8 @@ FocusScope {
         if (api.memory.has("tab")) tab = api.memory.get("tab");
         if (api.memory.has("sortMode")) sortMode = api.memory.get("sortMode");
         if (api.memory.has("soundOn")) soundOn = api.memory.get("soundOn");
+        p7Load();
+        syncLibrary();
         refresh();
         loadAchievements();
         unquiet.start();
@@ -274,6 +363,7 @@ FocusScope {
         target: Qt.application
         function onStateChanged() {
             if (Qt.application.state === Qt.ApplicationActive) {
+                if (!consoles.open) syncLibrary();
                 refresh();
                 loadAchievements();
             }
@@ -282,6 +372,7 @@ FocusScope {
 
     // ------------------------------------------------------------ controle
     Keys.onPressed: {
+        if (consoles.open) { consoles.handleKey(event); return; }
         if (settingsOpen) { handleSettingsKey(event); return; }
         if (accountOpen) {
             if (api.keys.isCancel(event)) { event.accepted = true; accountOpen = false; root.forceActiveFocus(); }
@@ -303,7 +394,7 @@ FocusScope {
             else if (event.key === Qt.Key_Right) { event.accepted = true; homeIndex = L.clampIndex(homeIndex + 1, recents.length); }
             else if (event.key === Qt.Key_Up) { event.accepted = true; gearFocused = true; }
             else if (event.key === Qt.Key_Down) { event.accepted = true; }
-            else if (api.keys.isAccept(event)) { event.accepted = true; launchCurrent(); }
+            else if (api.keys.isAccept(event)) { event.accepted = true; if (current) launchCurrent(); else consoles.show(); }
             // Círculo no Início não faz nada (o menu do sistema fica no botão Options)
             else if (api.keys.isCancel(event)) { event.accepted = true; }
             return;
@@ -342,12 +433,13 @@ FocusScope {
     }
 
     property int settingsIndex: 0
-    readonly property int settingsCount: 4
+    readonly property int settingsCount: 5
     function settingsActivate(i) {
-        if (i === 0) { settingsOpen = false; accountOpen = true; }
-        else if (i === 1) setSound(!soundOn);
-        else if (i === 2) { settingsOpen = false; Internal.settings.reloadProviders(); }
-        else if (i === 3) settingsOpen = false;
+        if (i === 0) { settingsOpen = false; consoles.show(); }
+        else if (i === 1) { settingsOpen = false; accountOpen = true; }
+        else if (i === 2) setSound(!soundOn);
+        else if (i === 3) { settingsOpen = false; syncLibrary(true); }
+        else if (i === 4) settingsOpen = false;
     }
     function handleSettingsKey(event) {
         if (api.keys.isCancel(event)) { event.accepted = true; settingsOpen = false; return; }
@@ -681,14 +773,14 @@ FocusScope {
                         width: parent.width
                         wrapMode: Text.WordWrap
                         color: "#c7ffffff"; font.family: "Roboto"; font.pixelSize: 17; lineHeight: 1.35
-                        text: "A pasta Jogos já foi criada no armazenamento interno do tablet. Para começar:"
+                        text: "O P7 Station procura sozinho as pastas de jogos que você já tem (ROMs, Jogos, Emulation...). Para começar:"
                     }
                     Repeater {
                         model: [
-                            "Coloque cada jogo na pasta do console: Jogos › snes, psx, ps2, wiiu ou switch. Não renomeie os arquivos: a capa vem pelo nome.",
-                            "Instale os emuladores: RetroArch (site, versão AArch64), NetherSX2, Cemu e Eden.",
-                            "No NetherSX2, no Cemu e no Eden, adicione a pasta do console e toque em Permitir.",
-                            "Feche e abra o P7 Station. Seus jogos aparecem aqui."
+                            "Deixe os jogos em uma pasta por console, por exemplo ROMs › snes, ROMs › psx. Não renomeie os arquivos: a capa vem pelo nome.",
+                            "Aperte X aqui para abrir Consoles e emuladores e escolher a pasta dos seus jogos, se ela não for achada sozinha.",
+                            "Instale os emuladores que quiser (RetroArch, DuckStation, NetherSX2, PPSSPP, Dolphin, Cemu, Eden...). O P7 Station acha cada um sozinho.",
+                            "Seus jogos aparecem aqui assim que a pasta for encontrada."
                         ]
                         delegate: Row {
                             spacing: 16
@@ -1273,9 +1365,10 @@ FocusScope {
 
                     Repeater {
                         model: [
+                            { title: "Consoles e emuladores", detail: "Pastas dos jogos e emulador de cada console" },
                             { title: "Conta do RetroAchievements", detail: root.raState === "off" ? "Não conectada" : root.raUser() },
                             { title: "Sons", detail: root.soundOn ? "Ligados" : "Desligados" },
-                            { title: "Atualizar biblioteca", detail: "Procura jogos novos na pasta Jogos" },
+                            { title: "Atualizar biblioteca", detail: "Procura jogos e emuladores novos" },
                             { title: "Fechar", detail: "" }
                         ]
                         delegate: Rectangle {
@@ -1294,7 +1387,7 @@ FocusScope {
                             }
                             // chave liga/desliga dos sons
                             Rectangle {
-                                visible: index === 1
+                                visible: index === 2
                                 anchors.right: parent.right
                                 anchors.rightMargin: 16
                                 anchors.verticalCenter: parent.verticalCenter
@@ -1322,7 +1415,7 @@ FocusScope {
                         leftPadding: 12
                         wrapMode: Text.WordWrap
                         color: "#73ffffff"; font.family: "Roboto"; font.pixelSize: 13; lineHeight: 1.35
-                        text: "Jogos: armazenamento interno › Jogos (snes, psx, ps2, wiiu, switch).\nPara abrir o P7 Station ao ligar o tablet: Configurações do Android › Apps › Apps padrão › Tela inicial.\nMenu do sistema: botão Options do controle."
+                        text: "Para abrir o P7 Station ao ligar o tablet: Configurações do Android › Apps › Apps padrão › Tela inicial.\nMenu do sistema: botão Options do controle."
                     }
                 }
             }
@@ -1403,6 +1496,15 @@ FocusScope {
                     }
                 }
             }
+        }
+
+        // ------------------------------------------- consoles e emuladores
+        ConsolesPanel {
+            id: consoles
+            host: root
+            backdrop: glassSource
+            stageItem: stage
+            onFinished: { root.syncLibrary(); root.forceActiveFocus(); }
         }
 
         // ---------------------------------------------------- rodapé

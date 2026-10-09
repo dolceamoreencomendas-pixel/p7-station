@@ -15,11 +15,22 @@ Item {
 
     // largura da caixa, espessura e tipo de mídia por console
     readonly property var cases: ({
-        snes:   { w: 330, d: 46, media: "cart", spine: "#2b2b33", label: "SUPER NINTENDO" },
-        psx:    { w: 270, d: 24, media: "disc", spine: "#1d1f24", label: "PlayStation" },
-        ps2:    { w: 228, d: 30, media: "disc", spine: "#141823", label: "PlayStation 2" },
-        wiiu:   { w: 228, d: 30, media: "disc", spine: "#1b8fc4", label: "Wii U" },
-        "switch": { w: 210, d: 22, media: "card", spine: "#d42a20", label: "NINTENDO SWITCH" }
+        nes:       { w: 300, d: 40, media: "cart", spine: "#2a2a2e", label: "NES" },
+        snes:      { w: 330, d: 46, media: "cart", spine: "#2b2b33", label: "SUPER NINTENDO" },
+        n64:       { w: 330, d: 44, media: "cart", spine: "#26302a", label: "NINTENDO 64" },
+        gb:        { w: 220, d: 20, media: "cart", spine: "#3a3f2c", label: "GAME BOY" },
+        gbc:       { w: 220, d: 20, media: "cart", spine: "#3a2c4a", label: "GAME BOY COLOR" },
+        gba:       { w: 220, d: 20, media: "cart", spine: "#2c2f52", label: "GAME BOY ADVANCE" },
+        nds:       { w: 230, d: 22, media: "card", spine: "#3a3d44", label: "NINTENDO DS" },
+        genesis:   { w: 250, d: 34, media: "cart", spine: "#17181c", label: "MEGA DRIVE" },
+        psx:       { w: 270, d: 24, media: "disc", spine: "#1d1f24", label: "PlayStation" },
+        ps2:       { w: 228, d: 30, media: "disc", spine: "#141823", label: "PlayStation 2" },
+        psp:       { w: 200, d: 22, media: "disc", spine: "#15171c", label: "PSP" },
+        dreamcast: { w: 270, d: 24, media: "disc", spine: "#3a3d44", label: "Dreamcast" },
+        gc:        { w: 228, d: 30, media: "disc", spine: "#3b2f6a", label: "GAMECUBE" },
+        wii:       { w: 228, d: 30, media: "disc", spine: "#7d838c", label: "Wii" },
+        wiiu:      { w: 228, d: 30, media: "disc", spine: "#1b8fc4", label: "Wii U" },
+        "switch":  { w: 210, d: 22, media: "card", spine: "#d42a20", label: "NINTENDO SWITCH" }
     })
     readonly property var spec: entry && cases[entry.sys] ? cases[entry.sys]
                                : { w: 260, d: 28, media: "disc", spine: "#2a2d33", label: "" }
