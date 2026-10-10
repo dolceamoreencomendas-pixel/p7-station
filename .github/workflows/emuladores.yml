@@ -1,0 +1,45 @@
+name: Baixar emuladores (para passar ao tablet)
+on:
+  workflow_dispatch:
+
+jobs:
+  baixar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar dos sites oficiais
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p saida/nucleos-retroarch
+          exec > >(tee saida/LEIA-registro.txt) 2>&1
+          set -x
+          BB=https://buildbot.libretro.com
+          # RetroArch (versão 64 bits, a do Pad 7)
+          for V in $(curl -sL $BB/stable/ | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -Vu | tail -3 | tac); do
+            curl -sfL -o saida/RetroArch_aarch64.apk "$BB/stable/$V/android/RetroArch_aarch64.apk" && { echo "RetroArch $V"; break; }
+          done
+          # núcleos do RetroArch (64 bits)
+          for c in snes9x nestopia mupen64plus_next mgba gambatte genesis_plus_gx; do
+            curl -sfL -o /tmp/c.zip "$BB/nightly/android/latest/arm64-v8a/${c}_libretro_android.so.zip" && unzip -o -q /tmp/c.zip -d saida/nucleos-retroarch/
+          done
+          # versão mais nova publicada no GitHub de um projeto, primeiro .apk que bate com o filtro
+          gh_apk() {
+            local repo=$1 filt=$2 out=$3
+            local url=$(gh api "repos/$repo/releases" -q "[.[] | select(.prerelease==false)][0].assets[] | select(.name|test(\"$filt\";\"i\")) | .browser_download_url" | head -1)
+            [ -z "$url" ] && url=$(gh api "repos/$repo/releases" -q ".[0].assets[] | select(.name|test(\"$filt\";\"i\")) | .browser_download_url" | head -1)
+            echo "$repo -> $url"
+            [ -n "$url" ] && curl -sfL -o "saida/$out" "$url"
+          }
+          gh_apk rafaelvcaetano/melonDS-android 'apk$' melonDS.apk
+          gh_apk eden-emulator/Releases 'android.*\.apk$|\.apk$' Eden.apk
+          # PPSSPP: link do APK na página de download oficial
+          P=$(curl -sL https://www.ppsspp.org/download/ | grep -oE 'https?://[^"]*ppsspp[^"]*\.apk' | grep -vi gold | head -1)
+          [ -z "$P" ] && P=$(curl -sL https://www.ppsspp.org/download/ | grep -oE '/files/[^"]*\.apk' | grep -vi gold | head -1 | sed 's|^|https://www.ppsspp.org|')
+          echo "PPSSPP -> $P"; [ -n "$P" ] && curl -sfL -o saida/PPSSPP.apk "$P"
+          ls -la saida saida/nucleos-retroarch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emuladores
+          path: saida
+          retention-days: 7
