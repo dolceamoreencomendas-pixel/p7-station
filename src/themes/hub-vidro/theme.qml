@@ -1675,6 +1675,23 @@ FocusScope {
                 }
             }
 
+            // sem jogos: explica o que fazer, em vez de uma tela vazia
+            Column {
+                x: 64
+                y: 190
+                width: 760
+                spacing: 14
+                visible: root.entries.length === 0
+                Text { text: "Nenhum jogo ainda"; color: "#ffffff"; font.family: "Sora"; font.weight: Font.Light; font.pixelSize: 40 }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    lineHeight: 1.35
+                    color: "#c7ffffff"; font.family: "Manrope"; font.pixelSize: 18
+                    text: "Coloque os jogos numa pasta por console (por exemplo ROMs › snes) no armazenamento do tablet. Eles aparecem aqui sozinhos, em prateleiras, na próxima vez que o P7 Station abrir."
+                }
+            }
+
             ListView {
                 id: shelfView
                 x: 0
@@ -2449,6 +2466,7 @@ FocusScope {
                         return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "triangle", label: favLabel }, { glyph: "lr", label: "Trocar aba" } ];
                     }
                     if (root.tab === 1) {
+                        if (!root.current) return [ { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
                         if (root.libOnSort) return [ { glyph: "leftright", label: "Mudar ordem" }, { glyph: "cross", label: "Pronto" } ];
                         return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "triangle", label: favLabel },
                                  { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
