@@ -13,6 +13,7 @@ jobs:
         run: |
           mkdir -p saida/nucleos-retroarch
           exec > >(tee saida/LEIA-registro.txt) 2>&1
+          set +e
           set -x
           BB=https://buildbot.libretro.com
           # RetroArch (versão 64 bits, a do Pad 7)
@@ -39,6 +40,7 @@ jobs:
           echo "PPSSPP -> $P"; [ -n "$P" ] && curl -sfL -o saida/PPSSPP.apk "$P"
           ls -la saida saida/nucleos-retroarch
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: emuladores
           path: saida
