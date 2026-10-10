@@ -24,7 +24,7 @@ jobs:
             curl -sfL -o saida/RetroArch_aarch64.apk "$BB/stable/$V/android/RetroArch_aarch64.apk" && { echo "RetroArch $V"; break; }
           done
           # núcleos do RetroArch (64 bits)
-          for c in snes9x nestopia mupen64plus_next mgba gambatte genesis_plus_gx; do
+          for c in snes9x nestopia mupen64plus_next_gles3 mupen64plus_next mgba gambatte genesis_plus_gx; do
             curl -sfL -o /tmp/c.zip "$BB/nightly/android/latest/arm64-v8a/${c}_libretro_android.so.zip" && unzip -o -q /tmp/c.zip -d saida/nucleos-retroarch/
           done
           # versão mais nova publicada no GitHub de um projeto, primeiro .apk que bate com o filtro
@@ -36,7 +36,6 @@ jobs:
             [ -n "$url" ] && curl -sfL -o "saida/$out" "$url"
           }
           gh_apk rafaelvcaetano/melonDS-android 'apk$' melonDS.apk
-          gh_apk eden-emulator/Releases 'android.*\.apk$|\.apk$' Eden.apk
           # PPSSPP: link do APK na página de download oficial
           P=$(curl -sL https://www.ppsspp.org/download/ | grep -oE 'https?://[^"]*ppsspp[^"]*\.apk' | grep -vi gold | head -1)
           [ -z "$P" ] && P=$(curl -sL https://www.ppsspp.org/download/ | grep -oE '/files/[^"]*\.apk' | grep -vi gold | head -1 | sed 's|^|https://www.ppsspp.org|')
