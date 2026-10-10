@@ -15,6 +15,9 @@ ffmpeg -loglevel error -y -f x11grab -framerate 30 -video_size 1600x1068 -i :99 
 FF=$!
 timeout 240 ./tema "$HERE" "$OUT" > "$OUT/registro.txt" 2>&1
 echo "saida do tema: $?" >> "$OUT/registro.txt"
+# segunda volta: tablet novo, sem jogos e sem emuladores
+P7_VAZIO=1 timeout 120 ./tema "$HERE" "$OUT" > "$OUT/registro-vazio.txt" 2>&1
+echo "saida do tema: $?" >> "$OUT/registro-vazio.txt"
 kill -INT $FF; sleep 2
 kill $XV
 cd "$OUT"

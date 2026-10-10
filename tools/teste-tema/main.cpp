@@ -44,6 +44,7 @@ int main(int argc, char *argv[]) {
     QDir().mkpath(driver.out);
 
     QQmlEngine engine;
+    engine.rootContext()->setContextProperty("tabletVazio", qEnvironmentVariableIsSet("P7_VAZIO"));
     QQmlComponent mocks(&engine, QUrl::fromLocalFile(here + "/mocks.qml"));
     QObject *m = mocks.create();
     if (!m) { qWarning() << mocks.errors(); return 1; }

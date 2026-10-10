@@ -143,5 +143,16 @@ Item {
         id: delayed
         onTriggered: { if (top.pending) top.pending(); top.next(); }
     }
-    Component.onCompleted: next()
+    // tablet novo: tela de boas-vindas, X abre Consoles, as outras abas vazias
+    property var stepsVazio: [
+        [4000, function () { driver.shot("v01-boas-vindas"); driver.key(Qt.Key_Return); }],
+        [1500, function () { driver.shot("v02-consoles"); driver.key(Qt.Key_Escape); driver.key(Qt.Key_Escape); }],
+        [1200, function () { driver.key(Qt.Key_E); }],
+        [1200, function () { driver.shot("v03-biblioteca-vazia"); driver.key(Qt.Key_E); }],
+        [1200, function () { driver.shot("v04-trofeus-vazio"); driver.key(Qt.Key_I); driver.key(Qt.Key_F); driver.key(Qt.Key_Return); }],
+        [1000, function () { driver.shot("v05-botoes-sem-jogo"); driver.key(Qt.Key_Q); driver.key(Qt.Key_Q); }],
+        [1200, function () { driver.key(Qt.Key_I); driver.key(Qt.Key_F); }],
+        [1000, function () { driver.shot("v06-inicio-botoes"); driver.quit(); }]
+    ]
+    Component.onCompleted: { if (tabletVazio) steps = stepsVazio; next(); }
 }

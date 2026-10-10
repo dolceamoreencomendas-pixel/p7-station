@@ -29,6 +29,7 @@ QtObject {
     function daysAgo(d) { return new Date(Date.now() - d * 86400000); }
 
     property var games: []
+    property var installed: ["com.retroarch", "com.github.stenzek.duckstation", "org.ppsspp.ppsspp", "me.magnum.melonds", "dev.eden.eden_emulator"]
     Component.onCompleted: {
         var spec = [
             ["snes", "Super Mario World (USA).sfc", 1, 7800, false],
@@ -46,6 +47,8 @@ QtObject {
             ["genesis", "Sonic The Hedgehog (USA, Europe).md", 0, 0, false],
             ["switch", "Super Mario Odyssey.nsp", 0, 0, false]
         ];
+        // tablet novo: nenhum jogo e nenhum emulador
+        if (tabletVazio) { spec = []; installed = []; }
         var out = [];
         spec.forEach(function (s) {
             var title = s[1].replace(/\.[^.]+$/, "");
@@ -94,7 +97,7 @@ QtObject {
 
     property QtObject p7: QtObject {
         function storageRoot() { return "/storage/emulated/0"; }
-        function installedPackages() { return ["com.retroarch", "com.github.stenzek.duckstation", "org.ppsspp.ppsspp", "me.magnum.melonds", "dev.eden.eden_emulator"]; }
+        function installedPackages() { return m.installed; }
         function subdirs(p) { return []; }
         function isDir(p) { return false; }
         function countFiles(p) { return 0; }
@@ -103,7 +106,7 @@ QtObject {
         function libraryDir() { return "/tmp"; }
         function introPending() { return false; }
         function introDone() {}
-        function controllers() { return [{ name: "Sony Interactive Entertainment Wireless Controller", hasBattery: true, level: 72, charging: false }]; }
+        function controllers() { return tabletVazio ? [] : [{ name: "Sony Interactive Entertainment Wireless Controller", hasBattery: true, level: 72, charging: false }]; }
         function switchCover(t, f) { return ""; }
     }
 }
