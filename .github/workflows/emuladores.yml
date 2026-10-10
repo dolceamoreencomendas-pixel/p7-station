@@ -2,6 +2,9 @@ name: Baixar emuladores (para passar ao tablet)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   baixar:
     runs-on: ubuntu-latest
@@ -45,3 +48,14 @@ jobs:
           name: emuladores
           path: saida
           retention-days: 7
+      # rascunho: só quem cuida do repositório vê (não fica público)
+      - name: Guardar num rascunho de versão
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd saida && zip -q -r ../nucleos-retroarch.zip nucleos-retroarch && cd ..
+          gh release delete emuladores -y -R ${{ github.repository }} 2>/dev/null || true
+          gh release create emuladores --draft -R ${{ github.repository }} --title "Emuladores para o tablet" \
+            --notes "Baixados dos sites oficiais. Rascunho, não é público." \
+            saida/*.apk nucleos-retroarch.zip saida/LEIA-registro.txt
