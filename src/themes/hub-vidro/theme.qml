@@ -326,6 +326,7 @@ FocusScope {
         entries = out;
 
         var r = L.buildRecents(out, 16);
+        if (r.played > 0) console.warn("P7: tempo jogado: " + r.list[0].title + " = " + r.list[0].playTime + " s");
         recentsLabel = r.label;
         recents = r.list;
         var hi = keepHome ? indexOfKey(recents, keepHome) : -1;

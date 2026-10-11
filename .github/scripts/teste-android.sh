@@ -176,10 +176,14 @@ top_activity > "$OUT/tela-ativa-no-jogo.txt"
 adb logcat -d > "$OUT/logcat-jogo.txt"
 grep -iE "P7:|RetroArch|libretro|snes9x|ActivityManager: (START|Displayed)|ActivityTaskManager: (START|Displayed)" "$OUT/logcat-jogo.txt" | head -200 > "$OUT/log-jogo-resumo.txt"
 
+# fica mais um tempo jogando, para o tempo jogado passar de 1 minuto
+sleep 55
+adb logcat -c
 # volta para o P7 Station
 adb shell am force-stop "$RA_PKG" 2>/dev/null
 start_app
 shot 15-voltou 8
+adb logcat -d | grep -E "Game session over|P7: tempo jogado|Activity finished" > "$OUT/tempo-jogado.txt"
 # depois de voltar do jogo, o controle tem que andar sem tocar na tela
 key KEYCODE_DPAD_RIGHT
 key KEYCODE_DPAD_RIGHT

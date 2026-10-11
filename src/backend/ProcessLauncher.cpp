@@ -27,9 +27,12 @@
 
 #ifdef Q_OS_ANDROID
 #include "platform/AndroidHelpers.h"
+#include <QGuiApplication>
+#include <QTimer>
 #endif
 
 #include <QDir>
+#include <memory>
 #include <QUrl>
 #include <QRegularExpression>
 
@@ -278,8 +281,42 @@ void ProcessLauncher::onTeardownComplete()
 #ifndef Q_OS_ANDROID
     Q_ASSERT(m_process);
     m_process->waitForFinished(-1);
-#endif
     emit processFinished();
+#else
+    // On Android the emulator is another app: the launch call returns at once.
+    // The game is only over when we come back to the foreground, so wait for that
+    // (otherwise the play time is always zero).
+    auto* app = qobject_cast<QGuiApplication*>(QCoreApplication::instance());
+    auto went_away = std::make_shared<bool>(app && app->applicationState() != Qt::ApplicationActive);
+    auto done = std::make_shared<bool>(false);
+    auto* ctx = new QObject(this);
+
+    auto finish = [this, done, ctx](const char* why) {
+        if (*done)
+            return;
+        *done = true;
+        Log::info(LOGMSG("Game session over (%1)").arg(QLatin1String(why)));
+        ctx->deleteLater();
+        emit processFinished();
+    };
+
+    if (app) {
+        connect(app, &QGuiApplication::applicationStateChanged, ctx,
+            [went_away, finish](Qt::ApplicationState state) {
+                if (state != Qt::ApplicationActive)
+                    *went_away = true;
+                else if (*went_away)
+                    finish("returned to the app");
+            });
+    }
+    // if the emulator never came to the front, the launch did not really happen
+    QTimer::singleShot(10000, ctx, [went_away, finish]() {
+        if (!*went_away)
+            finish("emulator never opened");
+    });
+    if (!app)
+        finish("no gui app");
+#endif
 }
 
 void ProcessLauncher::onProcessStarted()
