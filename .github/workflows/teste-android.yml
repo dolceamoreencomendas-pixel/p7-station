@@ -105,10 +105,14 @@ jobs:
       - name: Publicar prints
         if: always()
         run: |
-          cd resultado && zip -q ../prints.zip * && cd ..
+          shopt -s nullglob
+          mkdir -p resultado
+          cp emus/*.txt resultado/ 2>/dev/null || true
+          ls -la resultado > resultado/lista.txt
+          (cd resultado && zip -q -r ../prints.zip .)
           gh release create "teste-${{ github.run_number }}" --prerelease \
             --title "Teste ${{ github.run_number }} (Android virtual)" \
             --notes "Prints e registros do teste automático. Não é para instalar." \
-            prints.zip resultado/*.png resultado/*.txt resultado/*.mp4 emus/*.txt
+            prints.zip
         env:
           GH_TOKEN: ${{ github.token }}
