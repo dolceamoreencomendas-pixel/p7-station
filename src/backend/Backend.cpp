@@ -18,6 +18,7 @@
 #include "Backend.h"
 
 #include "AppSettings.h"
+#include "providers/Provider.h"
 #include "Log.h"
 #include "FrontendLayer.h"
 #include "ProcessLauncher.h"
@@ -163,6 +164,17 @@ Backend::Backend(const CliArgs& args)
 
     AppSettings::load_providers();
     AppSettings::load_config();
+#ifdef Q_OS_ANDROID
+    // P7 Station: abrir mais rápido. A biblioteca é guardada depois de lida e só é lida de novo
+    // quando os arquivos de metadados ou as pastas de jogos mudam (ou em "Atualizar biblioteca").
+    // Os provedores Logiqx e Skraper não são usados pelo P7 Station e só atrasavam a leitura.
+    AppSettings::general.scan_on_launch = false;
+    for (const auto& provider : AppSettings::providers()) {
+        const QString code = provider->codename();
+        if (code == QLatin1String("logiqx") || code == QLatin1String("skraper"))
+            provider->setEnabled(false);
+    }
+#endif
 
     m_api_public = new model::ApiObject(args);
     m_api_private = new model::Internal(args);

@@ -129,16 +129,36 @@ Item {
         mode = "browser";
         host.playConfirm();
     }
-    function enterDir(p) {
+    // entra numa pasta; ao voltar, a pasta de onde veio já fica escolhida
+    function enterDir(p, selectName) {
         browserPath = p;
         browserDirs = P7.subdirs(p);
-        browserIndex = 0;
+        var i = selectName ? browserDirs.indexOf(selectName) : -1;
+        browserIndex = i >= 0 ? i + (browserAtTop ? 1 : 2) : 0;
+    }
+    function goUp() {
+        if (browserAtTop) return false;
+        var name = String(browserPath).replace(/\/+$/, "").split("/").pop();
+        enterDir(parentOf(browserPath), name);
+        host.playBack();
+        return true;
+    }
+    // Círculo: sai da escolha de pasta de uma vez, de qualquer profundidade
+    function exitBrowser() {
+        mode = browserTarget === "*" ? "list" : "detail";
+        host.playBack();
+    }
+    // o botão "voltar" da tela (toque) e o Círculo fazem a mesma coisa
+    function back() {
+        if (mode === "browser") exitBrowser();
+        else if (mode === "detail") { mode = "list"; host.playBack(); }
+        else close();
     }
     readonly property bool browserAtTop: browserPath === storage || browserPath === "/" || browserPath === ""
     function parentOf(p) { var s = String(p).replace(/\/+$/, ""); var i = s.lastIndexOf("/"); return i > 0 ? s.substring(0, i) : "/"; }
     readonly property var browserRows: {
         var r = [{ kind: "use", label: browserTarget === "*" ? "Usar esta pasta para procurar os consoles" : "Usar esta pasta" }];
-        if (!browserAtTop) r.push({ kind: "up", label: "Voltar uma pasta" });
+        if (!browserAtTop) r.push({ kind: "up", label: "Pasta anterior" });
         browserDirs.forEach(function (d) { r.push({ kind: "dir", label: d }); });
         return r;
     }
@@ -157,7 +177,7 @@ Item {
             host.playConfirm();
             return;
         }
-        if (r.kind === "up") { enterDir(parentOf(browserPath)); host.playBack(); return; }
+        if (r.kind === "up") { goUp(); return; }
         enterDir(browserPath.replace(/\/+$/, "") + "/" + r.label);
         host.playMove();
     }
@@ -183,13 +203,12 @@ Item {
             return;
         }
         if (mode === "browser") {
-            if (api.keys.isCancel(event)) {
-                if (browserAtTop) { mode = browserTarget === "*" ? "list" : "detail"; host.playBack(); }
-                else { enterDir(parentOf(browserPath)); host.playBack(); }
-                return;
-            }
+            if (api.keys.isCancel(event)) { exitBrowser(); return; }
+            if (api.keys.isFilters(event)) { activateBrowser(0); return; }        // Triângulo: usar esta pasta
             if (k === Qt.Key_Up)   { browserIndex = Math.max(0, browserIndex - 1); host.playMove(); }
             else if (k === Qt.Key_Down) { browserIndex = Math.min(browserRows.length - 1, browserIndex + 1); host.playMove(); }
+            else if (k === Qt.Key_Left) goUp();
+            else if (k === Qt.Key_Right) { if (browserRows[browserIndex] && browserRows[browserIndex].kind === "dir") activateBrowser(browserIndex); }
             else if (api.keys.isAccept(event)) activateBrowser(browserIndex);
         }
     }
@@ -219,17 +238,19 @@ Item {
             width: parent.width - 88
             spacing: 6
             Text {
-                text: panel.mode === "browser" ? (panel.browserTarget === "*" ? "Pasta dos jogos" : "Pasta · " + EM.byKey(panel.browserTarget).name)
+                text: panel.mode === "browser" ? (panel.browserTarget === "*" ? "Escolher a pasta dos jogos" : "Escolher a pasta · " + EM.byKey(panel.browserTarget).name)
                     : (panel.mode === "detail" && panel.detail ? panel.detail.sys.name : "Consoles e emuladores")
                 color: "#ffffff"; font.family: "Sora"; font.weight: Font.Light; font.pixelSize: 32
             }
             Text {
-                width: parent.width
+                width: parent.width - 160
                 elide: Text.ElideMiddle
-                color: "#8cffffff"; font.family: "Manrope"; font.pixelSize: 14
+                color: panel.mode === "browser" ? "#e6ffffff" : "#8cffffff"
+                font.family: "Manrope"; font.pixelSize: panel.mode === "browser" ? 17 : 14
+                font.weight: panel.mode === "browser" ? Font.Medium : Font.Normal
                 text: {
                     void panel.version;
-                    if (panel.mode === "browser") return panel.shortPath(panel.browserPath);
+                    if (panel.mode === "browser") return "Você está em:  " + panel.shortPath(panel.browserPath);
                     if (!panel.host) return "";
                     var ra = EM.retroarchPackage(panel.host.p7Installed);
                     var raName = "";
@@ -247,7 +268,7 @@ Item {
             x: 28
             y: head.y + head.height + 22
             width: parent.width - 56
-            height: parent.height - y - 30
+            height: parent.height - y - 84
             clip: true
             model: panel.listCount
             currentIndex: panel.listIndex
@@ -440,7 +461,7 @@ Item {
             x: 28
             y: head.y + head.height + 22
             width: parent.width - 56
-            height: parent.height - y - 30
+            height: parent.height - y - 84
             clip: true
             model: panel.browserRows
             currentIndex: panel.browserIndex
@@ -470,6 +491,62 @@ Item {
                     anchors.fill: parent
                     onClicked: { panel.browserIndex = index; panel.activateBrowser(index); }
                 }
+            }
+        }
+
+        // voltar (para o toque; o Círculo faz o mesmo)
+        Rectangle {
+            anchors.right: parent.right
+            anchors.rightMargin: 36
+            y: 34
+            width: backLabel.implicitWidth + 44
+            height: 46
+            radius: 23
+            color: backArea.pressed ? "#33ffffff" : "#17ffffff"
+            border.width: 1
+            border.color: "#33ffffff"
+            Text {
+                id: backLabel
+                anchors.centerIn: parent
+                text: panel.mode === "list" ? "Fechar" : (panel.mode === "browser" ? "‹  Sair" : "‹  Voltar")
+                color: "#ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 16
+            }
+            MouseArea { id: backArea; anchors.fill: parent; onClicked: panel.back() }
+        }
+
+        // dicas dos botões
+        Rectangle {
+            x: 28
+            width: parent.width - 56
+            height: 1
+            anchors.bottom: hints.top
+            anchors.bottomMargin: 16
+            color: "#1fffffff"
+        }
+        HintBar {
+            id: hints
+            anchors.right: parent.right
+            anchors.rightMargin: 44
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 22
+            hints: {
+                if (panel.mode === "browser") {
+                    var b = [];
+                    var r = panel.browserRows[panel.browserIndex];
+                    if (r && r.kind === "dir") b.push({ glyph: "cross", label: "Abrir pasta" });
+                    else if (r && r.kind === "use") b.push({ glyph: "cross", label: "Usar esta pasta" });
+                    if (!panel.browserAtTop) b.push({ glyph: "left", label: "Pasta anterior" });
+                    b.push({ glyph: "triangle", label: "Usar esta pasta" });
+                    b.push({ glyph: "circle", label: "Sair" });
+                    return b;
+                }
+                if (panel.mode === "detail") {
+                    var d = [ { glyph: "updown", label: "Escolher" }, { glyph: "cross", label: "Abrir" } ];
+                    if (panel.detailIndex === 1) d.push({ glyph: "leftright", label: "Trocar emulador" });
+                    d.push({ glyph: "circle", label: "Voltar" });
+                    return d;
+                }
+                return [ { glyph: "updown", label: "Escolher" }, { glyph: "cross", label: "Abrir" }, { glyph: "circle", label: "Fechar" } ];
             }
         }
     }

@@ -24,6 +24,7 @@
         <file>hub-vidro/MediaArt.qml</file>
         <file>hub-vidro/DetailsPage.qml</file>
         <file>hub-vidro/Ring.qml</file>
+        <file>hub-vidro/HintBar.qml</file>
         <file>hub-vidro/sounds/insert.wav</file>
         <file>hub-vidro/fonts/Sora-Light.ttf</file>
         <file>hub-vidro/fonts/Sora-Regular.ttf</file>

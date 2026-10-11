@@ -80,7 +80,7 @@ key KEYCODE_BACK
 # abertura animada (só na primeira vez desde que o app abriu): grava 9 s de vídeo da tela
 adb shell screenrecord --time-limit 9 --bit-rate 8000000 /sdcard/abertura.mp4
 adb pull /sdcard/abertura.mp4 "$OUT/abertura.mp4"
-adb logcat -d | grep -E "P7|qml" > "$OUT/log-abertura.txt"
+adb logcat -d | grep -E "P7|qml|pegasus-fe" | grep -v "Error transferring" > "$OUT/log-abertura.txt"
 if command -v ffmpeg >/dev/null; then
     ffmpeg -loglevel error -i "$OUT/abertura.mp4" -vf "fps=4,scale=640:-1,tile=4x9" -frames:v 1 "$OUT/02a-abertura-quadros.png"
 fi
@@ -119,8 +119,16 @@ shot 09-voltou-snes9x 2
 key KEYCODE_DPAD_UP
 key KEYCODE_ENTER
 shot 10-navegador-de-pastas 2
-key KEYCODE_ESCAPE
-key KEYCODE_ESCAPE
+# entra em duas pastas com a seta para a direita, volta uma com a esquerda
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_RIGHT
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_DOWN
+key KEYCODE_DPAD_RIGHT
+shot 10a-dentro-das-pastas 1
+key KEYCODE_DPAD_LEFT
+shot 10a2-voltou-uma-pasta 1
+# Círculo sai da escolha de pasta de uma vez
 key KEYCODE_ESCAPE
 shot 10b-voltou-ao-console 2
 key KEYCODE_ESCAPE
@@ -196,6 +204,22 @@ shot 17b-switch-abriu 8
 top_activity > "$OUT/tela-ativa-switch.txt"
 adb logcat -d | grep -E "P7FALSO|P7: emuladores de Switch|P7: abrindo|ActivityTaskManager: START" > "$OUT/switch-emulador-achado.txt"
 adb shell am force-stop com.teste.nyushu
+
+# ---------------------------------------------------------------- abrir de novo (biblioteca guardada)
+adb logcat -c
+stop_app
+start_app
+sleep 14
+shot 18-reabriu 1
+adb logcat -d | grep -E "pegasus-fe" | grep -E "cache|Finished searching|Metafiles|Reloading|P7: abertura|P7: jogos|P7: recarregando|Loaded" > "$OUT/reabrir.txt"
+# jogo novo copiado para a pasta: tem que aparecer na próxima abertura
+mk "gba/Mario Kart - Super Circuit (USA).gba"
+adb logcat -c
+stop_app
+start_app
+sleep 14
+shot 19-jogo-novo 1
+adb logcat -d | grep -E "pegasus-fe" | grep -E "cache|Finished searching|Metafiles|P7: abertura|P7: jogos|Loaded" > "$OUT/jogo-novo.txt"
 
 # ---------------------------------------------------------------- registros
 adb logcat -d > "$OUT/logcat-completo.txt"

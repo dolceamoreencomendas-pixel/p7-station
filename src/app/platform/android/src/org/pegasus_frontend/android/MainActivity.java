@@ -272,6 +272,20 @@ public class MainActivity extends org.qtproject.qt5.android.bindings.QtActivity 
                 android.view.InputDevice dev = android.view.InputDevice.getDevice(id);
                 if (dev == null || dev.isVirtual())
                     continue;
+                // só controles ligados ao tablet (Bluetooth/USB): fica de fora o que é do próprio
+                // aparelho, como o "uinput-xiaomi" e os botões laterais
+                final String devName = String.valueOf(dev.getName());
+                if (devName.toLowerCase().matches(".*(uinput|virtual|gpio|keypad|-keys|touch|fingerprint).*"))
+                    continue;
+                if (Build.VERSION.SDK_INT >= 29) {
+                    try {
+                        if (!(Boolean) dev.getClass().getMethod("isExternal").invoke(dev))
+                            continue;
+                    }
+                    catch (Exception e) {
+                        android.util.Log.w("P7", "controle externo? " + e);
+                    }
+                }
                 final int src = dev.getSources();
                 final boolean pad = (src & android.view.InputDevice.SOURCE_GAMEPAD) == android.view.InputDevice.SOURCE_GAMEPAD
                                  || (src & android.view.InputDevice.SOURCE_JOYSTICK) == android.view.InputDevice.SOURCE_JOYSTICK;

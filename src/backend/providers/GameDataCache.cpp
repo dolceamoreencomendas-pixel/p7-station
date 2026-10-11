@@ -141,6 +141,61 @@ void add_file_fingerprint(QJsonArray& out, const QString& path)
     out.append(item);
 }
 
+// P7 Station: o índice guardado só vale enquanto as pastas de jogos tiverem os mesmos arquivos.
+// Para cada pasta citada nas linhas "directories:" do arquivo de metadados, entra na impressão
+// digital a lista de nomes dos arquivos e subpastas (só os nomes, sem abrir nada). Assim um jogo
+// novo copiado para a pasta aparece na próxima abertura, sem precisar ler a biblioteca toda sempre.
+void add_game_dir_listing(QJsonArray& out, const QString& dir_path)
+{
+    const QFileInfo info(dir_path);
+    if (!info.isDir())
+        return;
+
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    int count = 0;
+    QDirIterator it(info.absoluteFilePath(),
+                    QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext() && count < 200000) {
+        hash.addData(it.next().toUtf8());
+        hash.addData("\n", 1);
+        count++;
+    }
+
+    QJsonObject item;
+    item[QStringLiteral("dir")] = info.absoluteFilePath();
+    item[QStringLiteral("entries")] = count;
+    item[QStringLiteral("listing")] = QString::fromLatin1(hash.result().toHex());
+    out.append(item);
+}
+
+void add_metadata_dirs(QJsonArray& out, const QString& metafile_path)
+{
+    QFile file(metafile_path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+
+    const QDir base = QFileInfo(metafile_path).absoluteDir();
+    bool in_dirs = false;
+    while (!file.atEnd()) {
+        const QString line = QString::fromUtf8(file.readLine()).trimmed();
+        if (line.startsWith(QLatin1String("directories:"), Qt::CaseInsensitive)
+            || line.startsWith(QLatin1String("directory:"), Qt::CaseInsensitive)) {
+            in_dirs = true;
+            const QString value = line.mid(line.indexOf(QChar(':')) + 1).trimmed();
+            if (!value.isEmpty())
+                add_game_dir_listing(out, QDir::cleanPath(base.absoluteFilePath(value)));
+            continue;
+        }
+        // continuação de valor em várias linhas (começa com espaço no arquivo original)
+        if (in_dirs && !line.isEmpty() && !line.contains(QChar(':'))) {
+            add_game_dir_listing(out, QDir::cleanPath(base.absoluteFilePath(line)));
+            continue;
+        }
+        in_dirs = false;
+    }
+}
+
 void add_metadata_fingerprints(QJsonArray& out, const QString& dir_path)
 {
     const QDir dir(dir_path);
@@ -151,16 +206,21 @@ void add_metadata_fingerprints(QJsonArray& out, const QString& dir_path)
         QStringLiteral("metadata.pegasus.txt"),
         QStringLiteral("metadata.txt"),
     };
-    for (const QString& name : names)
+    for (const QString& name : names) {
         add_file_fingerprint(out, dir.absoluteFilePath(name));
+        add_metadata_dirs(out, dir.absoluteFilePath(name));
+    }
 
     const QStringList filters = {
         QStringLiteral("*.metadata.pegasus.txt"),
         QStringLiteral("*.metadata.txt"),
     };
     QDirIterator it(dir.absolutePath(), filters, QDir::Files | QDir::NoSymLinks);
-    while (it.hasNext())
-        add_file_fingerprint(out, it.next());
+    while (it.hasNext()) {
+        const QString path = it.next();
+        add_file_fingerprint(out, path);
+        add_metadata_dirs(out, path);
+    }
 }
 
 QJsonObject collection_to_json(const model::Collection& collection)

@@ -322,6 +322,7 @@ FocusScope {
             var e = makeEntry(api.allGames.get(i));
             if (e.sys !== "android") out.push(e);
         }
+        if (out.length !== entries.length) console.warn("P7: jogos na biblioteca: " + out.length);
         entries = out;
 
         var r = L.buildRecents(out, 16);
@@ -1172,58 +1173,130 @@ FocusScope {
             anchors.verticalCenter: tabBar.verticalCenter
             spacing: 18
 
-            // controles conectados: anel com a bateria (só o que o Android informa)
+            // controles conectados: anel com a bateria (só o que o Android informa).
+            // O modelo é a quantidade de controles: mudar a carga só atualiza o cartão, não recria.
             Repeater {
-                model: root.pads.slice(0, 2)
+                model: Math.min(2, root.pads.length)
                 delegate: Glass {
+                    id: padChip
+                    readonly property var pad: root.pads[index] || ({ name: "", hasBattery: false, level: -1, charging: false })
+                    readonly property bool hasLevel: pad.hasBattery && pad.level >= 0
+                    readonly property bool low: hasLevel && pad.level <= 15 && !pad.charging
                     backdrop: glassSource
                     stageItem: stage
                     anchors.verticalCenter: parent.verticalCenter
-                    width: padText.width + 74
+                    width: padText.width + 82
                     height: 56
                     radius: 28
-                    readonly property bool hasLevel: modelData.hasBattery && modelData.level >= 0
+
+                    // chega deslizando e crescendo um pouco
+                    opacity: 0
+                    scale: 0.86
+                    Component.onCompleted: padIn.start()
+                    ParallelAnimation {
+                        id: padIn
+                        NumberAnimation { target: padChip; property: "opacity"; to: 1; duration: 320; easing.type: Easing.OutCubic }
+                        NumberAnimation { target: padChip; property: "scale"; to: 1; duration: 520; easing.type: Easing.OutBack; easing.overshoot: 1.6 }
+                    }
+
                     Ring {
+                        id: padRing
                         x: 6; anchors.verticalCenter: parent.verticalCenter
                         width: 44; height: 44
-                        lineWidth: 3
+                        lineWidth: 3.5
                         pixelRatio: root.pixelRatio
-                        value: hasLevel ? modelData.level / 100 : 1
-                        color: hasLevel ? L.batteryColor(modelData.level, modelData.charging) : "#59ffffff"
+                        value: padChip.hasLevel ? padChip.pad.level / 100 : 1
+                        color: padChip.hasLevel ? L.batteryColor(padChip.pad.level, padChip.pad.charging) : "#59ffffff"
                         track: "#26ffffff"
-                        Canvas {
+                        // bateria fraca: o anel pisca três vezes e para (não fica gastando bateria do tablet)
+                        SequentialAnimation on opacity {
+                            running: padChip.low
+                            loops: 3
+                            NumberAnimation { to: 0.35; duration: 450; easing.type: Easing.InOutSine }
+                            NumberAnimation { to: 1; duration: 450; easing.type: Easing.InOutSine }
+                        }
+                        Text {
                             anchors.centerIn: parent
-                            width: 22 * 3; height: 16 * 3
-                            scale: 1 / 3
-                            renderTarget: Canvas.Image
-                            onPaint: {
-                                var c = getContext("2d");
-                                c.reset();
-                                c.scale(3, 3);
-                                c.strokeStyle = "#ffffff";
-                                c.lineWidth = 1.5;
-                                c.lineJoin = "round";
-                                c.beginPath();
-                                c.moveTo(6, 2); c.lineTo(16, 2);
-                                c.bezierCurveTo(20, 2, 21.5, 11, 19.5, 13.5);
-                                c.bezierCurveTo(18, 15, 16, 12, 14.5, 10.5);
-                                c.lineTo(7.5, 10.5);
-                                c.bezierCurveTo(6, 12, 4, 15, 2.5, 13.5);
-                                c.bezierCurveTo(0.5, 11, 2, 2, 6, 2);
-                                c.closePath();
-                                c.stroke();
+                            visible: padChip.hasLevel
+                            text: padChip.hasLevel ? padChip.pad.level : ""
+                            color: "#ffffff"
+                            font.family: "Sora"; font.weight: Font.DemiBold; font.pixelSize: 14
+                        }
+                        Item {
+                            anchors.centerIn: parent
+                            width: 22; height: 16
+                            visible: !padChip.hasLevel
+                            Canvas {
+                                anchors.centerIn: parent
+                                width: 66; height: 48
+                                scale: 1 / 3
+                                renderTarget: Canvas.Image
+                                onPaint: {
+                                    var c = getContext("2d");
+                                    c.reset();
+                                    c.scale(3, 3);
+                                    c.strokeStyle = "#ffffff";
+                                    c.lineWidth = 1.5;
+                                    c.lineJoin = "round";
+                                    c.beginPath();
+                                    c.moveTo(6, 2); c.lineTo(16, 2);
+                                    c.bezierCurveTo(20, 2, 21.5, 11, 19.5, 13.5);
+                                    c.bezierCurveTo(18, 15, 16, 12, 14.5, 10.5);
+                                    c.lineTo(7.5, 10.5);
+                                    c.bezierCurveTo(6, 12, 4, 15, 2.5, 13.5);
+                                    c.bezierCurveTo(0.5, 11, 2, 2, 6, 2);
+                                    c.closePath();
+                                    c.stroke();
+                                }
+                            }
+                        }
+                        // raio de carregando
+                        Rectangle {
+                            visible: padChip.hasLevel && padChip.pad.charging
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: -3
+                            width: 18; height: 18; radius: 9
+                            color: "#7fd6ff"
+                            border.width: 2
+                            border.color: "#1a1830"
+                            Item {
+                                anchors.centerIn: parent
+                                width: 8; height: 10
+                                Canvas {
+                                    anchors.centerIn: parent
+                                    width: 24; height: 30
+                                    scale: 1 / 3
+                                    renderTarget: Canvas.Image
+                                    onPaint: {
+                                        var c = getContext("2d");
+                                        c.reset();
+                                        c.scale(3, 3);
+                                        c.fillStyle = "#0b0a14";
+                                        c.beginPath();
+                                        c.moveTo(5, 0); c.lineTo(0.5, 5.6); c.lineTo(3.6, 5.6);
+                                        c.lineTo(2.6, 10); c.lineTo(7.5, 4); c.lineTo(4.4, 4); c.closePath();
+                                        c.fill();
+                                    }
+                                }
                             }
                         }
                     }
                     Column {
                         id: padText
-                        x: 60
+                        x: 62
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 1
-                        Text { text: "Controle " + (index + 1); color: "#ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 14 }
                         Text {
-                            text: (hasLevel ? modelData.level + "%" + (modelData.charging ? " · carregando" : "") + " · " : "") + L.padLabel(modelData.name)
-                            color: hasLevel && modelData.level <= 15 && !modelData.charging ? "#ff9c8f" : "#a6ffffff"
+                            text: L.padLabel(padChip.pad.name)
+                            color: "#ffffff"; font.family: "Manrope"; font.weight: Font.Bold; font.pixelSize: 15
+                        }
+                        Text {
+                            text: !padChip.hasLevel ? "Conectado"
+                                : padChip.pad.charging ? "Carregando · " + padChip.pad.level + "%"
+                                : padChip.low ? "Bateria fraca · " + padChip.pad.level + "%"
+                                : (padChip.pad.level > 30 ? "Bateria boa" : "Bateria pela metade")
+                            color: padChip.low ? "#ff9c8f" : (padChip.hasLevel && padChip.pad.charging ? "#9fe3ff" : "#b3ffffff")
                             font.family: "Manrope"; font.weight: Font.Medium; font.pixelSize: 13
                         }
                     }
@@ -2447,100 +2520,40 @@ FocusScope {
         }
 
         // ---------------------------------------------------- rodapé
-        Row {
+        HintBar {
             anchors.right: parent.right
             anchors.rightMargin: 56
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 26
-            spacing: 28
-            visible: !root.settingsOpen && !root.accountOpen && !consoles.open && root.launchPhase === ""
-
-            Repeater {
-                model: {
-                    var favLabel = root.current && root.current.fav ? "Desfavoritar" : "Favoritar";
-                    if (root.detailsOpen)
-                        return [ { glyph: "cross", label: "Escolher" }, { glyph: "triangle", label: favLabel }, { glyph: "circle", label: "Voltar" } ];
-                    if (root.tab === 0) {
-                        if (root.gearFocused) return [ { glyph: "cross", label: root.kidLock ? "Segure: configurações" : "Configurações" }, { glyph: "circle", label: "Voltar" } ];
-                        if (!root.current) return [ { glyph: "cross", label: "Consoles" }, { glyph: "lr", label: "Trocar aba" } ];
-                        return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "triangle", label: favLabel }, { glyph: "lr", label: "Trocar aba" } ];
-                    }
-                    if (root.tab === 1) {
-                        if (!root.current) return [ { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
-                        if (root.libOnSort) return [ { glyph: "leftright", label: "Mudar ordem" }, { glyph: "cross", label: "Pronto" } ];
-                        return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "triangle", label: favLabel },
-                                 { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
-                    }
-                    if (root.trophyFocus === 1)
-                        return [ { glyph: "left", label: "Jogos" }, { glyph: "circle", label: "Voltar" } ];
+            visible: !consoles.open && root.launchPhase === "" && !root.introOn
+            hints: {
+                if (root.noticeOpen) return [ { glyph: "cross", label: "Entendi" } ];
+                if (root.accountOpen) return [ { glyph: "circle", label: "Voltar" } ];
+                if (root.settingsOpen) {
+                    var sh = [ { glyph: "updown", label: "Escolher" }, { glyph: "cross", label: "Abrir" } ];
+                    if (root.settingsIndex === 2) sh.push({ glyph: "leftright", label: "Volume" });
+                    sh.push({ glyph: "circle", label: "Fechar" });
+                    return sh;
+                }
+                var favLabel = root.current && root.current.fav ? "Desfavoritar" : "Favoritar";
+                if (root.detailsOpen)
+                    return [ { glyph: "cross", label: "Escolher" }, { glyph: "triangle", label: favLabel }, { glyph: "circle", label: "Voltar" } ];
+                if (root.tab === 0) {
+                    if (root.gearFocused) return [ { glyph: "cross", label: root.kidLock ? "Segure: configurações" : "Configurações" }, { glyph: "circle", label: "Voltar" } ];
+                    if (!root.current) return [ { glyph: "cross", label: "Consoles" }, { glyph: "lr", label: "Trocar aba" } ];
+                    return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "triangle", label: favLabel }, { glyph: "lr", label: "Trocar aba" } ];
+                }
+                if (root.tab === 1) {
                     if (!root.current) return [ { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
-                    return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "right", label: "Conquistas" },
+                    if (root.libOnSort) return [ { glyph: "leftright", label: "Mudar ordem" }, { glyph: "cross", label: "Pronto" } ];
+                    return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "triangle", label: favLabel },
                              { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
                 }
-                delegate: Row {
-                    spacing: 9
-                    Item {
-                        width: 24; height: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: modelData.glyph !== "lr"
-                        Canvas {
-                            anchors.centerIn: parent
-                            width: 72; height: 72
-                            scale: 1 / 3
-                            renderTarget: Canvas.Image
-                            onPaint: {
-                                var ctx = getContext("2d");
-                                ctx.reset();
-                                ctx.scale(4, 4);       // 18 → 72
-                                ctx.strokeStyle = "rgba(255,255,255,0.62)";
-                                ctx.lineWidth = 1.2;
-                                ctx.lineJoin = "round";
-                                ctx.lineCap = "round";
-                                ctx.beginPath();
-                                ctx.arc(9, 9, 8, 0, Math.PI * 2);
-                                ctx.stroke();
-                                ctx.strokeStyle = "rgba(255,255,255,0.9)";
-                                ctx.beginPath();
-                                var g = modelData.glyph;
-                                if (g === "cross") {
-                                    ctx.moveTo(6.2, 6.2); ctx.lineTo(11.8, 11.8);
-                                    ctx.moveTo(11.8, 6.2); ctx.lineTo(6.2, 11.8);
-                                } else if (g === "triangle") {
-                                    ctx.moveTo(9, 5.2); ctx.lineTo(12.6, 11.6); ctx.lineTo(5.4, 11.6); ctx.closePath();
-                                } else if (g === "square") {
-                                    ctx.rect(5.8, 5.8, 6.4, 6.4);
-                                } else if (g === "circle") {
-                                    ctx.arc(9, 9, 3.6, 0, Math.PI * 2);
-                                } else if (g === "right") {
-                                    ctx.moveTo(7.5, 5.5); ctx.lineTo(11, 9); ctx.lineTo(7.5, 12.5);
-                                } else if (g === "left") {
-                                    ctx.moveTo(10.5, 5.5); ctx.lineTo(7, 9); ctx.lineTo(10.5, 12.5);
-                                } else {
-                                    ctx.moveTo(6.5, 6.5); ctx.lineTo(4.5, 9); ctx.lineTo(6.5, 11.5);
-                                    ctx.moveTo(11.5, 6.5); ctx.lineTo(13.5, 9); ctx.lineTo(11.5, 11.5);
-                                }
-                                ctx.stroke();
-                            }
-                        }
-                    }
-                    Text {
-                        visible: modelData.glyph === "lr"
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "L1 R1"
-                        color: "#ccffffff"
-                        font.family: "Manrope"
-                        font.pixelSize: 13
-                        font.weight: Font.Bold
-                    }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.label
-                        color: "#a6ffffff"
-                        font.family: "Manrope"
-                        font.weight: Font.Medium
-                        font.pixelSize: 15
-                    }
-                }
+                if (root.trophyFocus === 1)
+                    return [ { glyph: "left", label: "Jogos" }, { glyph: "circle", label: "Voltar" } ];
+                if (!root.current) return [ { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
+                return [ { glyph: "cross", label: "Jogar" }, { glyph: "square", label: "Detalhes" }, { glyph: "right", label: "Conquistas" },
+                         { glyph: "circle", label: "Voltar" }, { glyph: "lr", label: "Trocar aba" } ];
             }
         }
 
