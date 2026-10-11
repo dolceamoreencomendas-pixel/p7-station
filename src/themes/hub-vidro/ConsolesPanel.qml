@@ -482,7 +482,7 @@ Item {
                     x: 20; anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 40; elide: Text.ElideRight
                     text: modelData.kind === "use" ? "✓   " + modelData.label
-                        : (modelData.kind === "up" ? "‹   " + modelData.label : "▸   " + modelData.label)
+                        : (modelData.kind === "up" ? "‹   " + modelData.label : "›   " + modelData.label)
                     color: modelData.kind === "dir" ? "#e6ffffff" : "#ffffff"
                     font.family: "Manrope"; font.pixelSize: 17
                     font.weight: modelData.kind === "use" ? Font.Medium : Font.Normal
@@ -536,7 +536,7 @@ Item {
                     if (r && r.kind === "dir") b.push({ glyph: "cross", label: "Abrir pasta" });
                     else if (r && r.kind === "use") b.push({ glyph: "cross", label: "Usar esta pasta" });
                     if (!panel.browserAtTop) b.push({ glyph: "left", label: "Pasta anterior" });
-                    b.push({ glyph: "triangle", label: "Usar esta pasta" });
+                    if (!r || r.kind !== "use") b.push({ glyph: "triangle", label: "Usar esta pasta" });
                     b.push({ glyph: "circle", label: "Sair" });
                     return b;
                 }
